@@ -13,8 +13,11 @@ if len(sys.argv) != 2:
     print("Usage: python scripts/seed_events.py <events-table-name>")
     sys.exit(1)
 
+import os
+
 table_name = sys.argv[1]
-dynamodb = boto3.resource("dynamodb")
+region_name = sys.argv[2] if len(sys.argv) > 2 else os.environ.get("AWS_REGION", "us-west-1")
+dynamodb = boto3.resource("dynamodb", region_name=region_name)
 table = dynamodb.Table(table_name)
 
 sample_events = [

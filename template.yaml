@@ -134,6 +134,8 @@ Resources:
       Policies:
         - DynamoDBReadPolicy:
             TableName: !Ref EventsTable
+        - DynamoDBReadPolicy:
+            TableName: !Ref RegistrationsTable
       Events:
         ListEventsApi:
           Type: Api
