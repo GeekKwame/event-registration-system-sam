@@ -1,58 +1,54 @@
-# QueueLess Frontend — Serverless Web Dashboard
+# 🎨 EventPulse Frontend — Web Dashboard Guide
 
-A modern, responsive single-page dashboard for **QueueLess**: an event registration experience that makes live capacity visible, so attendees can choose events before they fill up.
+> A lightweight, user-friendly web interface for browsing events, registering online, and managing registrations.
 
 ---
 
-## 🚀 Quick Start
+## 🌟 What is this? (For Non-Technical Users)
 
-### 1. Open in Browser
-You can open `frontend/index.html` directly in any web browser!
+This folder contains the **website interface** for the EventPulse system. It allows non-technical users to interact with the AWS Serverless backend visually without needing to run terminal commands or code.
 
-Or launch a local HTTP server:
+---
+
+## 🚀 How to Open & Run the Dashboard
+
+### Method 1: Direct File Open (Simplest)
+1. Open your File Explorer / Finder.
+2. Navigate to `event-registration-system/frontend/`.
+3. Double-click **`index.html`** — it will open right in Google Chrome, Microsoft Edge, or Safari!
+
+### Method 2: Local Web Server
+If you prefer running a local server:
 ```bash
-# Option A: Python HTTP server
 python -m http.server 8000 --directory frontend
-
-# Option B: Node serve / live-server
-npx serve frontend
 ```
-Then visit `http://localhost:8000`.
+Then open `http://localhost:8000` in your web browser.
 
 ---
 
-## 🔗 Connecting to AWS API Gateway
+## 🔗 Connecting to Your AWS API Gateway
 
-### Local Testing (AWS SAM Local)
-1. In your terminal, start the SAM local API server:
-   ```bash
-   sam local start-api
+1. When the dashboard opens, look at the top bar labeled **API Gateway Base URL**.
+2. Paste your live AWS API URL:
+   ```text
+   https://kems8drwn6.execute-api.us-west-1.amazonaws.com/dev
    ```
-2. Open the web dashboard and enter `http://127.0.0.1:3000` in the **API Gateway Base URL** bar at the top, then click **Connect API**.
-
-### Live AWS Deployment
-1. Deploy your SAM stack:
-   ```bash
-   sam deploy --guided
-   ```
-2. Copy the `ApiUrl` output (e.g. `https://abc123xyz.execute-api.us-east-1.amazonaws.com/Prod`).
-3. Paste the URL into the **API Gateway Base URL** input field on the dashboard and click **Connect API**.
+3. Click **Connect API**.
+4. The dashboard will automatically fetch your live events from AWS DynamoDB!
 
 ---
 
-## ⚡ Features & Endpoints Covered
+## 🌐 Deploying the Frontend to the Web (Free Hosting Options)
 
-| Feature | Method | API Endpoint | Description |
-|---|---|---|---|
-| **Browse Events** | `GET` | `/events` | Displays open events, date, capacity, and current registrations. |
-| **Register Event** | `POST` | `/register` | Interactive registration modal submitting full name and email. |
-| **Lookup Registrations** | `GET` | `/registrations/{email}` | Searches DynamoDB `EmailIndex` GSI for active user sign-ups. |
-| **Cancel Registration** | `DELETE` | `/registration/{id}` | Deletes a registration from DynamoDB. |
+### Option 1: GitHub Pages (Recommended)
+1. Go to your GitHub repository: `https://github.com/GeekKwame/event-registration-system`.
+2. Click **Settings** ➔ **Pages** (on the left sidebar).
+3. Under **Build and deployment**:
+   - **Branch:** `main`
+   - **Folder:** `/frontend`
+4. Click **Save**. Within 1–2 minutes, GitHub will publish your live website URL!
 
----
-
-## 🎨 Tech Stack
-- **Structure:** Semantic HTML5
-- **Styling:** Vanilla CSS3 (Dark Mode, Glassmorphism, CSS Variables, CSS Grid, Micro-animations)
-- **Logic:** Native Modern JavaScript (Fetch API, LocalStorage, Async/Await)
-- **Zero Build Step:** Runs natively in any browser with zero dependencies!
+### Option 2: Netlify Drag-and-Drop
+1. Go to [Netlify Drop](https://app.netlify.com/drop).
+2. Drag and drop the `frontend/` folder onto the page.
+3. Netlify will give you a instant live HTTPS web link!

@@ -6,3 +6,5 @@ __pycache__/
 samconfig.toml
 venv/
 .vscode/
+PERSONAL_NOTES.md
+docs/PERSONAL_NOTES.md
