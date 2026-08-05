@@ -116,10 +116,8 @@ class EventPulseApp {
     // Search Registrations
     this.formSearchEmail.addEventListener('submit', (e) => {
       e.preventDefault();
-      const email = this.searchEmailInput.value.trim();
-      if (email) {
-        this.fetchRegistrations(email);
-      }
+      const email = this.searchEmailInput.value.trim() || 'all';
+      this.fetchRegistrations(email);
     });
   }
 
@@ -151,6 +149,11 @@ class EventPulseApp {
     if (targetSection) {
       targetSection.classList.remove('hidden');
       targetSection.classList.add('active');
+    }
+
+    if (targetSectionId === 'section-my-registrations') {
+      const email = (this.searchEmailInput.value || '').trim() || 'all';
+      this.fetchRegistrations(email);
     }
   }
 
@@ -385,10 +388,11 @@ class EventPulseApp {
 
       item.innerHTML = `
         <div class="reg-info">
-          <h4>Event ID: ${this.escapeHtml(reg.eventId)}</h4>
+          <h4>${this.escapeHtml(reg.eventName || `Event ID: ${reg.eventId}`)}</h4>
           <div class="reg-meta">
-            <span>Name: <strong>${this.escapeHtml(reg.name)}</strong></span>
+            <span>Participant: <strong>${this.escapeHtml(reg.name || 'Participant')}</strong> (${this.escapeHtml(reg.email || 'N/A')})</span>
             <span>Registration ID: <code>${reg.registrationId}</code></span>
+            ${reg.createdAt ? `<span>Date: ${new Date(reg.createdAt).toLocaleDateString()}</span>` : ''}
           </div>
         </div>
         <button class="btn btn-danger btn-cancel-reg" data-reg-id="${reg.registrationId}">
