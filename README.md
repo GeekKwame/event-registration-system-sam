@@ -10,6 +10,57 @@ alarms, optional SNS email confirmations, and a GitHub Actions CI/CD pipeline.
 
 ---
 
+## Architecture Diagram
+
+![System Architecture](docs/architecture.png)
+
+*Replace `docs/architecture.png` with your exported [draw.io](https://app.diagrams.net/) diagram image.*
+
+### Component Flow
+
+```mermaid
+graph TD
+    Client["Client / Web Frontend / Postman"]
+    APIGW["AWS API Gateway"]
+    
+    subgraph LambdaHandlers["AWS Lambda Handlers (Python 3.12)"]
+        Register["POST /register"]
+        ListEvt["GET /events"]
+        GetReg["GET /registrations/{email}"]
+        CancelReg["DELETE /registration/{id}"]
+    end
+
+    subgraph DynamoDB["AWS DynamoDB"]
+        EventsTable[("Events Table")]
+        RegTable[("Registrations Table (with GSI)")]
+    end
+
+    subgraph Monitoring["Monitoring & Alerts"]
+        CW["CloudWatch Logs & Metrics"]
+        Alarm["Register Error Rate Alarm"]
+        SNS["SNS Topic (Email Notifications)"]
+    end
+
+    Client -->|HTTP Requests| APIGW
+    APIGW -->|Routes| Register
+    APIGW -->|Routes| ListEvt
+    APIGW -->|Routes| GetReg
+    APIGW -->|Routes| CancelReg
+
+    Register -->|Query / Write| EventsTable
+    Register -->|Put Item| RegTable
+    ListEvt -->|Scan / Query| EventsTable
+    GetReg -->|GSI Query by Email| RegTable
+    CancelReg -->|Delete Item| RegTable
+
+    LambdaHandlers -.->|Logs & Metrics| CW
+    CW -->|Triggers Error Rate > 5%| Alarm
+    Alarm -->|Notify| SNS
+    Register -.->|Publish Confirmation| SNS
+```
+
+---
+
 ## 0. Before you start — install these 3 things
 
 | Tool | Why | Check it worked |
