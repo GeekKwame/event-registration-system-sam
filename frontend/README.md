@@ -31,7 +31,7 @@ Then open `http://localhost:8000` in your web browser.
 1. When the dashboard opens, look at the top bar labeled **API Gateway Base URL**.
 2. Paste your live AWS API URL:
    ```text
-   https://kems8drwn6.execute-api.us-west-1.amazonaws.com/dev
+   https://kems8drwn6.execute-api.us-west-1.amazonaws.com/Prod
    ```
 3. Click **Connect API**.
 4. The dashboard will automatically fetch your live events from AWS DynamoDB!

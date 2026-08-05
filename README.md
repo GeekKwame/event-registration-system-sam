@@ -49,7 +49,7 @@ The repository includes a modern single-page web app located in the [`frontend/`
 
 ### Quick Start for Non-Technical Users:
 1. Open **[`frontend/index.html`](frontend/index.html)** in any web browser (Chrome, Edge, Safari).
-2. Paste your live API Gateway URL in the top bar (e.g., `https://kems8drwn6.execute-api.us-west-1.amazonaws.com/dev`).
+2. Paste your live API Gateway URL in the top bar (e.g., `https://kems8drwn6.execute-api.us-west-1.amazonaws.com/Prod`).
 3. Click **Connect API** — you're ready to browse events, register, and manage sign-ups!
 
 ---
