@@ -1,0 +1,235 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  Event Registration & Ticketing System
+  Serverless REST API built with AWS SAM (Lambda + API Gateway + DynamoDB)
+
+# ---------------------------------------------------------------------------
+# PARAMETERS
+# ---------------------------------------------------------------------------
+Parameters:
+  Stage:
+    Type: String
+    Default: dev
+    Description: Deployment stage (dev, staging, prod)
+  NotificationEmail:
+    Type: String
+    Default: ""
+    Description: >
+      Optional email address to receive SNS confirmation emails and
+      CloudWatch alarm notifications. Leave blank to skip email setup.
+
+Conditions:
+  HasNotificationEmail: !Not [!Equals [!Ref NotificationEmail, ""]]
+
+# ---------------------------------------------------------------------------
+# GLOBALS - shared settings applied to every function
+# ---------------------------------------------------------------------------
+Globals:
+  Function:
+    Runtime: python3.12
+    Timeout: 10
+    MemorySize: 128
+    Tracing: Active
+    Environment:
+      Variables:
+        EVENTS_TABLE: !Ref EventsTable
+        REGISTRATIONS_TABLE: !Ref RegistrationsTable
+        SNS_TOPIC_ARN: !If [HasNotificationEmail, !Ref ConfirmationTopic, ""]
+  Api:
+    Cors:
+      AllowMethods: "'GET,POST,DELETE,OPTIONS'"
+      AllowHeaders: "'Content-Type,Authorization'"
+      AllowOrigin: "'*'"
+
+# ---------------------------------------------------------------------------
+# RESOURCES
+# ---------------------------------------------------------------------------
+Resources:
+
+  # ---------------------------------------------------------------------
+  # DynamoDB Tables
+  # ---------------------------------------------------------------------
+  EventsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub "events-${Stage}"
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: eventId
+          AttributeType: S
+      KeySchema:
+        - AttributeName: eventId
+          KeyType: HASH
+
+  RegistrationsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub "registrations-${Stage}"
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: registrationId
+          AttributeType: S
+        - AttributeName: email
+          AttributeType: S
+      KeySchema:
+        - AttributeName: registrationId
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: EmailIndex
+          KeySchema:
+            - AttributeName: email
+              KeyType: HASH
+          Projection:
+            ProjectionType: ALL
+
+  # ---------------------------------------------------------------------
+  # Optional SNS Topic for confirmation emails + alarm notifications
+  # ---------------------------------------------------------------------
+  ConfirmationTopic:
+    Type: AWS::SNS::Topic
+    Condition: HasNotificationEmail
+    Properties:
+      TopicName: !Sub "event-registration-notifications-${Stage}"
+
+  ConfirmationSubscription:
+    Type: AWS::SNS::Subscription
+    Condition: HasNotificationEmail
+    Properties:
+      TopicArn: !Ref ConfirmationTopic
+      Protocol: email
+      Endpoint: !Ref NotificationEmail
+
+  # ---------------------------------------------------------------------
+  # Lambda Functions (one per endpoint)
+  # ---------------------------------------------------------------------
+  RegisterFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "event-register-${Stage}"
+      CodeUri: src/handlers/
+      Handler: register.handler
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref RegistrationsTable
+        - DynamoDBReadPolicy:
+            TableName: !Ref EventsTable
+        - Statement:
+            - Effect: Allow
+              Action: sns:Publish
+              Resource: !If [HasNotificationEmail, !Ref ConfirmationTopic, !Sub "arn:aws:sns:${AWS::Region}:${AWS::AccountId}:no-topic"]
+      Events:
+        RegisterApi:
+          Type: Api
+          Properties:
+            Path: /register
+            Method: post
+
+  ListEventsFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "event-list-${Stage}"
+      CodeUri: src/handlers/
+      Handler: list_events.handler
+      Policies:
+        - DynamoDBReadPolicy:
+            TableName: !Ref EventsTable
+      Events:
+        ListEventsApi:
+          Type: Api
+          Properties:
+            Path: /events
+            Method: get
+
+  GetRegistrationsFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "event-get-registrations-${Stage}"
+      CodeUri: src/handlers/
+      Handler: get_registrations.handler
+      Policies:
+        - DynamoDBReadPolicy:
+            TableName: !Ref RegistrationsTable
+      Events:
+        GetRegistrationsApi:
+          Type: Api
+          Properties:
+            Path: /registrations/{email}
+            Method: get
+
+  CancelRegistrationFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "event-cancel-registration-${Stage}"
+      CodeUri: src/handlers/
+      Handler: cancel_registration.handler
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref RegistrationsTable
+      Events:
+        CancelRegistrationApi:
+          Type: Api
+          Properties:
+            Path: /registration/{id}
+            Method: delete
+
+  # ---------------------------------------------------------------------
+  # CloudWatch Alarms - error rate > 5% per function
+  # (Metric math: Errors / Invocations * 100)
+  # ---------------------------------------------------------------------
+  RegisterErrorRateAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "RegisterFunction-ErrorRate-${Stage}"
+      AlarmDescription: "Triggers when RegisterFunction error rate exceeds 5%"
+      EvaluationPeriods: 1
+      DatapointsToAlarm: 1
+      Threshold: 5
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions:
+        - !If [HasNotificationEmail, !Ref ConfirmationTopic, !Ref "AWS::NoValue"]
+      Metrics:
+        - Id: errorRate
+          Expression: "(errors / invocations) * 100"
+          Label: ErrorRatePercent
+        - Id: errors
+          MetricStat:
+            Metric:
+              Namespace: AWS/Lambda
+              MetricName: Errors
+              Dimensions:
+                - Name: FunctionName
+                  Value: !Ref RegisterFunction
+            Period: 300
+            Stat: Sum
+          ReturnData: false
+        - Id: invocations
+          MetricStat:
+            Metric:
+              Namespace: AWS/Lambda
+              MetricName: Invocations
+              Dimensions:
+                - Name: FunctionName
+                  Value: !Ref RegisterFunction
+            Period: 300
+            Stat: Sum
+          ReturnData: false
+
+  AllFunctionsLogGroupRetention:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/aws/lambda/event-register-${Stage}"
+      RetentionInDays: 14
+
+# ---------------------------------------------------------------------------
+# OUTPUTS
+# ---------------------------------------------------------------------------
+Outputs:
+  ApiUrl:
+    Description: Base URL for the API Gateway stage
+    Value: !Sub "https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/${Stage}"
+  EventsTableName:
+    Value: !Ref EventsTable
+  RegistrationsTableName:
+    Value: !Ref RegistrationsTable
