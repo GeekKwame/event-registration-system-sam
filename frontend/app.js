@@ -234,10 +234,10 @@ class EventPulseApp {
       card.innerHTML = `
         <div>
           <div class="event-card-header">
-            <h3 class="event-card-title">${this.escapeHtml(evt.name || 'Untitled Event')}</h3>
+            <h3 class="event-card-title">${this.escapeHtml(evt.eventName || evt.name || 'Untitled Event')}</h3>
             <span class="badge ${isFull ? '' : 'badge-success'}">${isFull ? 'Full' : 'Open'}</span>
           </div>
-          <p class="event-card-desc">${this.escapeHtml(evt.description || 'No description available.')}</p>
+          <p class="event-card-desc">${this.escapeHtml(evt.description || evt.summary || (evt.status ? `Status: ${evt.status}` : 'No description available.'))}</p>
           <div class="event-card-meta">
             <div class="meta-item">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
@@ -284,7 +284,7 @@ class EventPulseApp {
   }
 
   openRegisterModal(evt) {
-    this.modalEventTitle.textContent = evt.name || 'Event Registration';
+    this.modalEventTitle.textContent = evt.eventName || evt.name || 'Event Registration';
     this.modalEventBadge.textContent = `Event ID: ${evt.eventId}`;
     this.modalEventId.value = evt.eventId;
     this.regNameInput.value = '';
