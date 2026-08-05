@@ -14,7 +14,7 @@ alarms, optional SNS email confirmations, and a GitHub Actions CI/CD pipeline.
 
 ![System Architecture](docs/architecture.png)
 
-*Replace `docs/architecture.png` with your exported [draw.io](https://app.diagrams.net/) diagram image.*
+*Replace `docs/architecture.png` with your exported [draw.io](https://app.diagrams.net/) diagram image. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the full AWS component matrix, styling guide, and draw.io export instructions.*
 
 ### Component Flow
 
