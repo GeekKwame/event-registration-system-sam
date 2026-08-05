@@ -1,4 +1,4 @@
-# EventHub Frontend — Serverless Web Dashboard
+# EventPulse Frontend — Serverless Web Dashboard
 
 A modern, responsive single-page web dashboard for the **Event Registration & Ticketing System**.
 

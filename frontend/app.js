@@ -1,9 +1,9 @@
 /**
- * EventHub Frontend Application
+ * EventPulse Frontend Application
  * Interacts directly with AWS SAM API Gateway & Lambda Handlers
  */
 
-const STORAGE_KEY_API_URL = 'eventhub_api_url';
+const STORAGE_KEY_API_URL = 'eventpulse_api_url';
 const DEFAULT_API_URL = 'http://127.0.0.1:3000'; // Default SAM Local endpoint
 
 // Sample Mock Data (used if API connection is not configured or offline)
@@ -34,7 +34,7 @@ const MOCK_EVENTS = [
   }
 ];
 
-class EventHubApp {
+class EventPulseApp {
   constructor() {
     this.apiUrl = localStorage.getItem(STORAGE_KEY_API_URL) || '';
     this.events = [];
@@ -443,5 +443,5 @@ class EventHubApp {
 
 // Initialize Application when DOM ready
 document.addEventListener('DOMContentLoaded', () => {
-  window.app = new EventHubApp();
+  window.app = new EventPulseApp();
 });
