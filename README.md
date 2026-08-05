@@ -14,7 +14,6 @@ alarms, optional SNS email confirmations, and a GitHub Actions CI/CD pipeline.
 
 ![System Architecture](docs/architecture.png)
 
-*Replace `docs/architecture.png` with your exported [draw.io](https://app.diagrams.net/) diagram image. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the full AWS component matrix, styling guide, and draw.io export instructions.*
 
 ### Component Flow
 
@@ -83,13 +82,20 @@ aws configure
 ```
 event-registration-system/
 ├── template.yaml              # SAM template: defines EVERY AWS resource
+├── frontend/                  # Web Dashboard UI (HTML5, Vanilla CSS3, JS)
+│   ├── index.html             # Dashboard single-page application
+│   ├── style.css              # Dark Glassmorphism design system
+│   ├── app.js                 # API Gateway integration logic
+│   └── README.md              # Frontend setup & usage instructions
 ├── src/handlers/
 │   ├── register.py            # POST /register
 │   ├── list_events.py         # GET /events
 │   ├── get_registrations.py   # GET /registrations/{email}
 │   ├── cancel_registration.py # DELETE /registration/{id}
 │   └── utils/response.py      # shared response/CORS helper
-├── scripts/seed_events.py     # adds 2 sample events after deploy
+├── docs/                      # Documentation & Architecture Guides
+│   └── ARCHITECTURE.md        # draw.io design specs & AWS component blueprint
+├── scripts/seed_events.py     # adds sample events to DynamoDB
 ├── tests/test_handlers.py     # unit tests (mocked AWS, no real account needed)
 ├── .github/workflows/deploy.yml  # CI/CD pipeline
 └── README.md                  # you are here
