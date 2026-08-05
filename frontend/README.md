@@ -1,6 +1,6 @@
-# EventPulse Frontend — Serverless Web Dashboard
+# QueueLess Frontend — Serverless Web Dashboard
 
-A modern, responsive single-page web dashboard for the **Event Registration & Ticketing System**.
+A modern, responsive single-page dashboard for **QueueLess**: an event registration experience that makes live capacity visible, so attendees can choose events before they fill up.
 
 ---
 

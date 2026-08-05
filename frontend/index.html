@@ -3,8 +3,8 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="description" content="Serverless Event Registration & Ticketing System powered by AWS SAM, API Gateway, Lambda, and DynamoDB.">
-  <title>EventPulse — Serverless Event Registration System</title>
+  <meta name="description" content="QueueLess helps attendees find available events and helps organisers prevent overcrowding.">
+  <title>QueueLess — Smart Event Capacity</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -27,14 +27,14 @@
           </svg>
         </div>
         <div>
-          <h1 class="brand-title">EventPulse <span class="badge-aws">AWS Serverless</span></h1>
-          <p class="brand-subtitle">API Gateway • Lambda • DynamoDB</p>
+          <h1 class="brand-title">QueueLess <span class="badge-aws">Live capacity</span></h1>
+          <p class="brand-subtitle">Less waiting. Better-attended events.</p>
         </div>
       </div>
       <div class="header-actions">
         <div id="api-status-badge" class="status-badge disconnected">
           <span class="status-dot"></span>
-          <span id="api-status-text">Connecting...</span>
+          <span id="api-status-text">Checking live availability...</span>
         </div>
       </div>
     </header>
@@ -71,10 +71,40 @@
     <main class="main-content">
       <!-- Section: Events Grid -->
       <section id="section-events" class="tab-content active">
+        <section class="hero-panel" aria-labelledby="hero-title">
+          <div class="hero-copy">
+            <p class="eyebrow"><span class="live-pulse"></span> EVENT FLOW, MADE SIMPLE</p>
+            <h2 id="hero-title">Find your next great room — before it fills up.</h2>
+            <p>QueueLess gives attendees a clear view of availability and gives organisers confidence that every seat matters.</p>
+            <div class="hero-proof">
+              <span>✓ Live seat availability</span>
+              <span>✓ One-click registration</span>
+              <span>✓ Your plans, in one pass</span>
+            </div>
+          </div>
+          <div class="capacity-orbit" aria-label="Live capacity snapshot">
+            <div class="orbit-ring orbit-ring-one"></div>
+            <div class="orbit-ring orbit-ring-two"></div>
+            <div class="orbit-center">
+              <strong id="hero-available-seats">—</strong>
+              <span>seats open</span>
+            </div>
+            <span class="orbit-label label-top">LIVE</span>
+            <span class="orbit-label label-bottom" id="hero-events-count">Loading events</span>
+          </div>
+        </section>
+
+        <div class="impact-strip" aria-label="Event flow overview">
+          <div class="impact-stat"><span class="impact-value" id="stat-events">—</span><span>events to explore</span></div>
+          <div class="impact-stat"><span class="impact-value" id="stat-registered">—</span><span>people already going</span></div>
+          <div class="impact-stat"><span class="impact-value" id="stat-capacity">—</span><span>overall capacity</span></div>
+          <div class="impact-message" id="capacity-message">Checking the room…</div>
+        </div>
+
         <div class="section-header">
           <div>
-            <h2>Browse Events</h2>
-            <p class="section-desc">Select an event below to register</p>
+            <h2>Choose your moment</h2>
+            <p class="section-desc">Every card shows exactly how much room is left.</p>
           </div>
           <button id="btn-refresh-events" class="btn btn-icon" title="Refresh Events">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
@@ -93,8 +123,8 @@
 
         <div id="events-empty" class="empty-state hidden">
           <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"/></svg>
-          <h3>No Events Found</h3>
-          <p>Make sure your API URL is correct or run `python scripts/seed_events.py` to seed sample events into DynamoDB.</p>
+          <h3>No events are live yet</h3>
+          <p>Connect your API or run `python scripts/seed_events.py` to open the first experiences.</p>
         </div>
       </section>
 
@@ -102,8 +132,8 @@
       <section id="section-my-registrations" class="tab-content hidden">
         <div class="section-header">
           <div>
-            <h2>Manage Registrations</h2>
-            <p class="section-desc">Search registrations linked to your email address</p>
+            <h2>Your event pass</h2>
+            <p class="section-desc">Keep every commitment in one simple place.</p>
           </div>
         </div>
 
@@ -158,7 +188,7 @@
           <div class="form-group">
             <label for="reg-email-input">Email Address *</label>
             <input type="email" id="reg-email-input" placeholder="e.g. jane@example.com" required>
-            <span class="form-hint">Confirmation notification will be sent if SNS is enabled.</span>
+            <span class="form-hint">Your confirmation is ready as soon as registration is complete.</span>
           </div>
 
           <div class="modal-footer">

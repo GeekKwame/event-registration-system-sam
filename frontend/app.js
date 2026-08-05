@@ -1,8 +1,9 @@
 /**
- * EventPulse Frontend Application
+ * QueueLess Frontend Application
  * Interacts directly with AWS SAM API Gateway & Lambda Handlers
  */
 
+// Preserve existing saved API Gateway URLs from the EventPulse prototype.
 const STORAGE_KEY_API_URL = 'eventpulse_api_url';
 const DEFAULT_API_URL = 'http://127.0.0.1:3000'; // Default SAM Local endpoint
 
@@ -212,6 +213,8 @@ class EventPulseApp {
 
   renderEvents(eventsList) {
     this.eventsGrid.innerHTML = '';
+    this.eventsLoading.classList.add('hidden');
+    this.updateCapacityStory(eventsList);
     if (!eventsList || eventsList.length === 0) {
       this.eventsEmpty.classList.remove('hidden');
       return;
@@ -242,12 +245,12 @@ class EventPulseApp {
             </div>
             <div class="meta-item">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 5v2m0 4v2m0 4v2M5 5a2 2 0 00-2 2v3a2 2 0 002 2h14a2 2 0 002-2V7a2 2 0 00-2-2H5z"/></svg>
-              <span>ID: ${evt.eventId}</span>
+              <span>Event ${evt.eventId}</span>
             </div>
           </div>
         </div>
         <div class="event-card-footer">
-          <span class="capacity-info">${regCount} / ${capacity} Registered</span>
+          <span class="capacity-info">${isFull ? 'Every seat claimed' : `${capacity - regCount} seats left`}</span>
           <button class="btn btn-primary btn-register-trigger" ${isFull ? 'disabled' : ''}>
             ${isFull ? 'Sold Out' : 'Register Now'}
           </button>
@@ -261,6 +264,23 @@ class EventPulseApp {
 
       this.eventsGrid.appendChild(card);
     });
+  }
+
+  updateCapacityStory(eventsList) {
+    const events = Array.isArray(eventsList) ? eventsList : [];
+    const totalCapacity = events.reduce((sum, event) => sum + Number(event.capacity || 100), 0);
+    const totalRegistered = events.reduce((sum, event) => sum + Number(event.registeredCount || 0), 0);
+    const available = Math.max(totalCapacity - totalRegistered, 0);
+    const message = events.length
+      ? `${available > 0 ? `${available} seats are still open` : 'Every event is at capacity'} — pick your moment.`
+      : 'Connect an event source to see live availability.';
+
+    document.getElementById('hero-available-seats').textContent = events.length ? available : '—';
+    document.getElementById('hero-events-count').textContent = events.length ? `${events.length} live events` : 'No live events';
+    document.getElementById('stat-events').textContent = events.length || '—';
+    document.getElementById('stat-registered').textContent = events.length ? totalRegistered : '—';
+    document.getElementById('stat-capacity').textContent = events.length ? totalCapacity : '—';
+    document.getElementById('capacity-message').textContent = message;
   }
 
   openRegisterModal(evt) {

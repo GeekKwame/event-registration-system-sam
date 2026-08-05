@@ -198,7 +198,9 @@ To wire this up in your own GitHub repo:
 1. Create an IAM role AWS can assume via GitHub's OIDC provider (avoids
    storing long-lived AWS keys as secrets — this is the current best
    practice; ask if you want the exact IAM trust policy for this).
-2. Add two repo secrets: `AWS_DEPLOY_ROLE_ARN` and `AWS_REGION`.
+2. Add the `AWS_DEPLOY_ROLE_ARN` repo secret. The deployment region is set to
+   `eu-west-1` in `.github/workflows/deploy.yml`; change that workflow value if
+   your stack is in another AWS region.
 3. Push to `main` — check the **Actions** tab to watch it run.
 
 Branching strategy for a small team: work on feature branches, open a PR
