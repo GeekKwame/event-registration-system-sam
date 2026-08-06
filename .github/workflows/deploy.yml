@@ -45,8 +45,6 @@ jobs:
 
       - name: Setup AWS SAM CLI
         uses: aws-actions/setup-sam@v2
-        with:
-          use-installer: true
 
       # --- Option A: OIDC (recommended, no long-lived keys stored in GitHub) ---
       - name: Configure AWS credentials
