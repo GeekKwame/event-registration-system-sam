@@ -3,14 +3,14 @@
  * Interacts directly with AWS SAM API Gateway & Lambda Handlers
  */
 
-// Preserve existing saved API Gateway URLs from the EventPulse prototype.
-const STORAGE_KEY_API_URL = 'eventpulse_api_url';
-const DEFAULT_API_URL = 'http://127.0.0.1:3000'; // Default SAM Local endpoint
+// Default API Gateway endpoint provided by user
+const DEFAULT_API_URL = 'https://mmrq6ebalh.execute-api.us-east-1.amazonaws.com';
 
 // Sample Mock Data (used if API connection is not configured or offline)
 const MOCK_EVENTS = [
   {
     eventId: 'evt-101',
+    event_id: 'evt-101',
     name: 'AWS Cloud Tech Summit 2026',
     date: '2026-09-15',
     capacity: 150,
@@ -19,6 +19,7 @@ const MOCK_EVENTS = [
   },
   {
     eventId: 'evt-102',
+    event_id: 'evt-102',
     name: 'Serverless Python Masterclass',
     date: '2026-10-01',
     capacity: 80,
@@ -27,6 +28,7 @@ const MOCK_EVENTS = [
   },
   {
     eventId: 'evt-103',
+    event_id: 'evt-103',
     name: 'DevOps & CI/CD Pipeline Workshop',
     date: '2026-10-20',
     capacity: 50,
@@ -37,7 +39,7 @@ const MOCK_EVENTS = [
 
 class EventPulseApp {
   constructor() {
-    this.apiUrl = localStorage.getItem(STORAGE_KEY_API_URL) || '';
+    this.apiUrl = (localStorage.getItem(STORAGE_KEY_API_URL) || DEFAULT_API_URL).replace(/\/+$/, '');
     this.events = [];
     this.currentSearchEmail = '';
     
@@ -203,7 +205,7 @@ class EventPulseApp {
       const res = await fetch(`${this.apiUrl}/events`);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
-      this.events = Array.isArray(data) ? data : (data.events || []);
+      this.events = Array.isArray(data) ? data : (data.events || data.data || data.items || data.results || []);
       this.renderEvents(this.events);
     } catch (err) {
       console.error('Error fetching events:', err);
@@ -230,25 +232,28 @@ class EventPulseApp {
       const card = document.createElement('div');
       card.className = 'event-card';
 
-      const regCount = evt.registeredCount || 0;
-      const capacity = evt.capacity || 100;
+      const eventId = evt.eventId || evt.event_id || evt.id || evt._id || 'N/A';
+      const eventName = evt.eventName || evt.name || evt.title || 'Untitled Event';
+      const regCount = Number(evt.registeredCount ?? evt.registered_count ?? evt.attendees ?? evt.attendeeCount ?? 0);
+      const capacity = Number(evt.capacity ?? evt.max_capacity ?? evt.total_seats ?? 100);
       const isFull = regCount >= capacity;
+      const dateStr = evt.date || 'TBD';
 
       card.innerHTML = `
         <div>
           <div class="event-card-header">
-            <h3 class="event-card-title">${this.escapeHtml(evt.eventName || evt.name || 'Untitled Event')}</h3>
+            <h3 class="event-card-title">${this.escapeHtml(eventName)}</h3>
             <span class="badge ${isFull ? '' : 'badge-success'}">${isFull ? 'Full' : 'Open'}</span>
           </div>
-          <p class="event-card-desc">${this.escapeHtml(evt.description || evt.summary || (evt.status ? `Status: ${evt.status}` : 'No description available.'))}</p>
+          <p class="event-card-desc">${this.escapeHtml(evt.description || evt.summary || (evt.location ? `Location: ${evt.location}` : (evt.status ? `Status: ${evt.status}` : 'No description available.')))}</p>
           <div class="event-card-meta">
             <div class="meta-item">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
-              <span>Date: ${evt.date || 'TBD'}</span>
+              <span>Date: ${dateStr}</span>
             </div>
             <div class="meta-item">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 5v2m0 4v2m0 4v2M5 5a2 2 0 00-2 2v3a2 2 0 002 2h14a2 2 0 002-2V7a2 2 0 00-2-2H5z"/></svg>
-              <span>Event ${evt.eventId}</span>
+              <span>Event ID: ${eventId}</span>
             </div>
           </div>
         </div>
@@ -272,7 +277,7 @@ class EventPulseApp {
   updateCapacityStory(eventsList) {
     const events = Array.isArray(eventsList) ? eventsList : [];
     const totalCapacity = events.reduce((sum, event) => sum + Number(event.capacity || 100), 0);
-    const totalRegistered = events.reduce((sum, event) => sum + Number(event.registeredCount || 0), 0);
+    const totalRegistered = events.reduce((sum, event) => sum + Number(event.registeredCount ?? event.registered_count ?? 0), 0);
     const available = Math.max(totalCapacity - totalRegistered, 0);
     const message = events.length
       ? `${available > 0 ? `${available} seats are still open` : 'Every event is at capacity'} — pick your moment.`
@@ -287,9 +292,11 @@ class EventPulseApp {
   }
 
   openRegisterModal(evt) {
-    this.modalEventTitle.textContent = evt.eventName || evt.name || 'Event Registration';
-    this.modalEventBadge.textContent = `Event ID: ${evt.eventId}`;
-    this.modalEventId.value = evt.eventId;
+    const eventId = evt.eventId || evt.event_id || '';
+    const name = evt.eventName || evt.name || 'Event Registration';
+    this.modalEventTitle.textContent = name;
+    this.modalEventBadge.textContent = `Event ID: ${eventId}`;
+    this.modalEventId.value = eventId;
     this.regNameInput.value = '';
     this.regEmailInput.value = '';
     
@@ -319,12 +326,19 @@ class EventPulseApp {
       const response = await fetch(`${this.apiUrl}/register`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ eventId, name, email })
+        body: JSON.stringify({
+          eventId,
+          event_id: eventId,
+          id: eventId,
+          name,
+          email
+        })
       });
 
       const result = await response.json();
       if (response.ok) {
-        this.showToast(`Registration Successful! Reg ID: ${result.registrationId || 'OK'}`, 'success');
+        const regId = result.registrationId || result.registration_id || result.id || 'OK';
+        this.showToast(`Registration Successful! Reg ID: ${regId}`, 'success');
         this.fetchEvents(); // refresh counts
       } else {
         this.showToast(result.error || result.message || 'Registration failed', 'error');
@@ -362,11 +376,11 @@ class EventPulseApp {
       const res = await fetch(`${this.apiUrl}/registrations/${encodeURIComponent(email)}`);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
-      const regs = Array.isArray(data) ? data : (data.registrations || []);
+      const regs = Array.isArray(data) ? data : (data.registrations || data.data || data.items || data.results || []);
       this.renderRegistrations(regs);
     } catch (err) {
       console.error('Error fetching registrations:', err);
-      this.showToast('Error querying EmailIndex GSI', 'error');
+      this.showToast('Error querying registrations endpoint', 'error');
     } finally {
       this.regsLoading.classList.add('hidden');
     }
@@ -386,23 +400,29 @@ class EventPulseApp {
       const item = document.createElement('div');
       item.className = 'reg-item';
 
+      const regId = reg.registrationId || reg.registration_id || reg.id || reg._id || 'N/A';
+      const eventId = reg.eventId || reg.event_id || reg.id || 'N/A';
+      const name = reg.name || 'Participant';
+      const email = reg.email || 'N/A';
+      const dateVal = reg.createdAt || reg.registered_at || reg.timestamp;
+
       item.innerHTML = `
         <div class="reg-info">
-          <h4>${this.escapeHtml(reg.eventName || `Event ID: ${reg.eventId}`)}</h4>
+          <h4>${this.escapeHtml(reg.eventName || `Event ID: ${eventId}`)}</h4>
           <div class="reg-meta">
-            <span>Participant: <strong>${this.escapeHtml(reg.name || 'Participant')}</strong> (${this.escapeHtml(reg.email || 'N/A')})</span>
-            <span>Registration ID: <code>${reg.registrationId}</code></span>
-            ${reg.createdAt ? `<span>Date: ${new Date(reg.createdAt).toLocaleDateString()}</span>` : ''}
+            <span>Participant: <strong>${this.escapeHtml(name)}</strong> (${this.escapeHtml(email)})</span>
+            <span>Registration ID: <code>${regId}</code></span>
+            ${dateVal ? `<span>Date: ${new Date(dateVal).toLocaleDateString()}</span>` : ''}
           </div>
         </div>
-        <button class="btn btn-danger btn-cancel-reg" data-reg-id="${reg.registrationId}">
+        <button class="btn btn-danger btn-cancel-reg" data-reg-id="${this.escapeHtml(regId)}">
           Cancel Registration
         </button>
       `;
 
       const cancelBtn = item.querySelector('.btn-cancel-reg');
       if (cancelBtn) {
-        cancelBtn.addEventListener('click', () => this.cancelRegistration(reg.registrationId));
+        cancelBtn.addEventListener('click', () => this.cancelRegistration(regId));
       }
 
       this.regsList.appendChild(item);
@@ -421,7 +441,8 @@ class EventPulseApp {
     }
 
     try {
-      const res = await fetch(`${this.apiUrl}/registration/${registrationId}`, {
+      const encodedId = encodeURIComponent(registrationId);
+      const res = await fetch(`${this.apiUrl}/registration/${encodedId}`, {
         method: 'DELETE'
       });
 
