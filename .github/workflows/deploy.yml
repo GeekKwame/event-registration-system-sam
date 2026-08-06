@@ -43,8 +43,10 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Install AWS SAM CLI
-        run: pip install aws-sam-cli
+      - name: Setup AWS SAM CLI
+        uses: aws-actions/setup-sam@v2
+        with:
+          use-installer: true
 
       # --- Option A: OIDC (recommended, no long-lived keys stored in GitHub) ---
       - name: Configure AWS credentials
