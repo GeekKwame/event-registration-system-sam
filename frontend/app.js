@@ -205,7 +205,23 @@ class EventPulseApp {
       const res = await fetch(`${this.apiUrl}/events`);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
-      this.events = Array.isArray(data) ? data : (data.events || data.data || data.items || data.results || []);
+      const rawList = Array.isArray(data) ? data : (data.events || data.data || data.items || data.results || []);
+      
+      this.events = rawList.map(item => {
+        const id = String(item.eventId || item.event_id || item.id || item._id || '').trim();
+        const name = String(item.eventName || item.name || item.title || 'Untitled Event').trim();
+        return {
+          ...item,
+          eventId: id,
+          event_id: id,
+          id: id,
+          eventName: name,
+          name: name,
+          capacity: Number(item.capacity ?? item.max_capacity ?? item.total_seats ?? 100),
+          registeredCount: Number(item.registeredCount ?? item.registered_count ?? item.attendees ?? item.attendeeCount ?? 0)
+        };
+      });
+
       this.renderEvents(this.events);
     } catch (err) {
       console.error('Error fetching events:', err);
@@ -292,10 +308,10 @@ class EventPulseApp {
   }
 
   openRegisterModal(evt) {
-    const eventId = evt.eventId || evt.event_id || '';
-    const name = evt.eventName || evt.name || 'Event Registration';
+    const eventId = String(evt.eventId || evt.event_id || evt.id || evt._id || '').trim();
+    const name = String(evt.eventName || evt.name || evt.title || 'Event Registration').trim();
     this.modalEventTitle.textContent = name;
-    this.modalEventBadge.textContent = `Event ID: ${eventId}`;
+    this.modalEventBadge.textContent = `Event ID: ${eventId || 'N/A'}`;
     this.modalEventId.value = eventId;
     this.regNameInput.value = '';
     this.regEmailInput.value = '';
