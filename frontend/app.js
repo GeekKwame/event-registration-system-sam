@@ -3,8 +3,28 @@
  * Interacts directly with AWS SAM API Gateway & Lambda Handlers
  */
 
+// Store a user-selected endpoint without losing the working default.
+const STORAGE_KEY_API_URL = 'eventpulse_api_url';
+
 // Default API Gateway endpoint provided by user
 const DEFAULT_API_URL = 'https://mmrq6ebalh.execute-api.us-east-1.amazonaws.com';
+
+function normalizeApiUrl(value) {
+  // Accept URLs pasted from prose/Markdown, where a trailing comma is common.
+  return String(value || '').trim().replace(/[,\s]+$/, '').replace(/\/+$/, '');
+}
+
+function unwrapApiPayload(payload) {
+  // Supports direct JSON responses and API Gateway/Lambda proxy envelopes.
+  if (payload && typeof payload.body === 'string') {
+    try {
+      return JSON.parse(payload.body);
+    } catch {
+      return payload;
+    }
+  }
+  return payload;
+}
 
 // Sample Mock Data (used if API connection is not configured or offline)
 const MOCK_EVENTS = [
@@ -39,7 +59,7 @@ const MOCK_EVENTS = [
 
 class EventPulseApp {
   constructor() {
-    this.apiUrl = (localStorage.getItem(STORAGE_KEY_API_URL) || DEFAULT_API_URL).replace(/\/+$/, '');
+    this.apiUrl = normalizeApiUrl(localStorage.getItem(STORAGE_KEY_API_URL) || DEFAULT_API_URL);
     this.events = [];
     this.currentSearchEmail = '';
     
@@ -87,7 +107,7 @@ class EventPulseApp {
   bindEvents() {
     // Save API URL
     this.btnSaveApiUrl.addEventListener('click', () => {
-      const url = this.apiUrlInput.value.trim().replace(/\/+$/, '');
+      const url = normalizeApiUrl(this.apiUrlInput.value);
       this.setApiUrl(url);
       this.checkApiStatusAndFetch();
     });
@@ -204,7 +224,7 @@ class EventPulseApp {
     try {
       const res = await fetch(`${this.apiUrl}/events`);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data = await res.json();
+      const data = unwrapApiPayload(await res.json());
       const rawList = Array.isArray(data) ? data : (data.events || data.data || data.items || data.results || []);
       
       this.events = rawList.map(item => {
@@ -351,9 +371,10 @@ class EventPulseApp {
         })
       });
 
-      const result = await response.json();
+      const result = unwrapApiPayload(await response.json());
       if (response.ok) {
-        const regId = result.registrationId || result.registration_id || result.id || 'OK';
+        const registration = result.registration || result.data || result;
+        const regId = registration.registrationId || registration.registration_id || registration.id || 'OK';
         this.showToast(`Registration Successful! Reg ID: ${regId}`, 'success');
         this.fetchEvents(); // refresh counts
       } else {
@@ -391,7 +412,7 @@ class EventPulseApp {
     try {
       const res = await fetch(`${this.apiUrl}/registrations/${encodeURIComponent(email)}`);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data = await res.json();
+      const data = unwrapApiPayload(await res.json());
       const regs = Array.isArray(data) ? data : (data.registrations || data.data || data.items || data.results || []);
       this.renderRegistrations(regs);
     } catch (err) {
@@ -417,7 +438,7 @@ class EventPulseApp {
       item.className = 'reg-item';
 
       const regId = reg.registrationId || reg.registration_id || reg.id || reg._id || 'N/A';
-      const eventId = reg.eventId || reg.event_id || reg.id || 'N/A';
+      const eventId = reg.eventId || reg.event_id || reg.eventID || 'N/A';
       const name = reg.name || 'Participant';
       const email = reg.email || 'N/A';
       const dateVal = reg.createdAt || reg.registered_at || reg.timestamp;
