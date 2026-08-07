@@ -28,6 +28,7 @@ def dynamodb_tables():
     os.environ["EVENTS_TABLE"] = EVENTS_TABLE
     os.environ["REGISTRATIONS_TABLE"] = REGISTRATIONS_TABLE
     os.environ["SNS_TOPIC_ARN"] = ""
+    os.environ["PROVIDERS_JSON"] = "[]"
     os.environ.setdefault("AWS_DEFAULT_REGION", "us-east-1")
     os.environ.setdefault("AWS_ACCESS_KEY_ID", "testing")
     os.environ.setdefault("AWS_SECRET_ACCESS_KEY", "testing")
@@ -77,6 +78,17 @@ def test_list_events(dynamodb_tables):
     assert body["events"][0]["eventId"] == "evt-001"
 
 
+def test_list_events_adds_namespaced_provider_events(dynamodb_tables, monkeypatch):
+    list_events = _reload("list_events")
+    monkeypatch.setattr(list_events, "provider_events", lambda: [{
+        "eventId": "accra-events:101", "sourceEventId": "101", "providerId": "accra-events",
+        "eventName": "Capstone Demo Day", "capacity": 50, "date": "2026-08-15",
+    }])
+    result = list_events.handler({}, None)
+    body = json.loads(result["body"])
+    assert any(event["eventId"] == "accra-events:101" for event in body["events"])
+
+
 def test_register_success(dynamodb_tables):
     register = _reload("register")
     event = {"body": json.dumps({"eventId": "evt-001", "email": "friend@example.com"})}
@@ -100,6 +112,20 @@ def test_register_invalid_email(dynamodb_tables):
     assert result["statusCode"] == 400
 
 
+def test_register_provider_event_mirrors_registration(dynamodb_tables, monkeypatch):
+    register = _reload("register")
+    monkeypatch.setattr(register, "register_with_provider", lambda *args: {"registration_id": "remote-123"})
+    event = {"body": json.dumps({
+        "eventId": "accra-events:101", "sourceEventId": "101", "providerId": "accra-events",
+        "email": "friend@example.com", "name": "Friend",
+    })}
+    result = register.handler(event, None)
+    body = json.loads(result["body"])
+    assert result["statusCode"] == 201
+    assert body["registration"]["eventId"] == "accra-events:101"
+    assert body["registration"]["providerRegistrationId"] == "remote-123"
+
+
 def test_get_registrations_and_cancel(dynamodb_tables):
     register = _reload("register")
     get_registrations = _reload("get_registrations")
@@ -120,3 +146,48 @@ def test_get_registrations_and_cancel(dynamodb_tables):
 
     cancel_again = cancel_registration.handler(cancel_event, None)
     assert cancel_again["statusCode"] == 404
+
+
+def test_get_registrations_includes_provider_records(dynamodb_tables, monkeypatch):
+    get_registrations = _reload("get_registrations")
+    monkeypatch.setattr(get_registrations, "registrations_for", lambda email: [{
+        "registrationId": "accra-events:remote-123", "eventId": "accra-events:101", "providerId": "accra-events", "email": email,
+    }])
+    result = get_registrations.handler({"pathParameters": {"email": "friend@example.com"}}, None)
+    body = json.loads(result["body"])
+    assert body["count"] == 1
+    assert body["registrations"][0].get("providerId") == "accra-events" or body["registrations"][0]["registrationId"] == "accra-events:remote-123"
+
+
+def test_provider_adapter_headers_and_region(monkeypatch):
+    providers_mod = _reload("utils.providers")
+    monkeypatch.setenv("PROVIDERS_JSON", json.dumps([{
+        "id": "eu-events",
+        "baseUrl": "https://eu-west-1.example.com",
+        "region": "eu-west-1",
+        "apiKey": "secret-key",
+        "token": "bearer-token",
+        "headers": {"X-Custom": "CustomVal"}
+    }]))
+
+    captured_headers = {}
+
+    def mock_urlopen(req, timeout=8):
+        class MockResponse:
+            def __enter__(self):
+                return self
+            def __exit__(self, *args):
+                pass
+            def read(self):
+                return json.dumps({"events": [{"id": "99", "name": "London Tech Expo"}]}).encode("utf-8")
+        captured_headers.update(req.headers)
+        return MockResponse()
+
+    monkeypatch.setattr(providers_mod, "urlopen", mock_urlopen)
+    events = providers_mod.list_events()
+
+    assert len(events) == 1
+    assert events[0]["eventId"] == "eu-events:99"
+    assert events[0]["region"] == "eu-west-1"
+    assert captured_headers.get("X-api-key") == "secret-key" or captured_headers.get("X-API-Key") == "secret-key"
+
