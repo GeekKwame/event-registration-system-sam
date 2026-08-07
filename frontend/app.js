@@ -5,6 +5,7 @@
 
 // Store a user-selected endpoint without losing the working default.
 const STORAGE_KEY_API_URL = 'eventpulse_api_url';
+const STORAGE_KEY_LAST_EMAIL = 'eventpulse_last_registration_email';
 
 // Default API Gateway endpoint provided by user
 const DEFAULT_API_URL = 'https://mmrq6ebalh.execute-api.us-east-1.amazonaws.com';
@@ -174,7 +175,8 @@ class EventPulseApp {
     }
 
     if (targetSectionId === 'section-my-registrations') {
-      const email = (this.searchEmailInput.value || '').trim() || 'all';
+      const email = (this.searchEmailInput.value || localStorage.getItem(STORAGE_KEY_LAST_EMAIL) || '').trim() || 'all';
+      if (email !== 'all') this.searchEmailInput.value = email;
       this.fetchRegistrations(email);
     }
   }
@@ -237,6 +239,8 @@ class EventPulseApp {
           id: id,
           eventName: name,
           name: name,
+          providerId: item.providerId || item.provider_id || '',
+          sourceEventId: String(item.sourceEventId || item.source_event_id || item.eventId || item.event_id || item.id || '').trim(),
           capacity: Number(item.capacity ?? item.max_capacity ?? item.total_seats ?? 100),
           registeredCount: Number(item.registeredCount ?? item.registered_count ?? item.attendees ?? item.attendeeCount ?? 0)
         };
@@ -330,6 +334,8 @@ class EventPulseApp {
   openRegisterModal(evt) {
     const eventId = String(evt.eventId || evt.event_id || evt.id || evt._id || '').trim();
     const name = String(evt.eventName || evt.name || evt.title || 'Event Registration').trim();
+    this.selectedProviderId = String(evt.providerId || evt.provider_id || '').trim();
+    this.selectedSourceEventId = String(evt.sourceEventId || evt.source_event_id || eventId).trim();
     this.modalEventTitle.textContent = name;
     this.modalEventBadge.textContent = `Event ID: ${eventId || 'N/A'}`;
     this.modalEventId.value = eventId;
@@ -366,6 +372,8 @@ class EventPulseApp {
           eventId,
           event_id: eventId,
           id: eventId,
+          providerId: this.selectedProviderId || undefined,
+          sourceEventId: this.selectedSourceEventId || undefined,
           name,
           email
         })
@@ -375,6 +383,9 @@ class EventPulseApp {
       if (response.ok) {
         const registration = result.registration || result.data || result;
         const regId = registration.registrationId || registration.registration_id || registration.id || 'OK';
+        localStorage.setItem(STORAGE_KEY_LAST_EMAIL, email);
+        this.currentSearchEmail = email;
+        this.searchEmailInput.value = email;
         this.showToast(`Registration Successful! Reg ID: ${regId}`, 'success');
         this.fetchEvents(); // refresh counts
       } else {

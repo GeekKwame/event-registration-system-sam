@@ -7,6 +7,7 @@ import os
 import boto3
 from boto3.dynamodb.conditions import Key
 from utils.response import build_response, error_response
+from utils.providers import registrations_for
 
 dynamodb = boto3.resource("dynamodb")
 REGISTRATIONS_TABLE = os.environ["REGISTRATIONS_TABLE"]
@@ -31,6 +32,10 @@ def handler(event, context):
                 KeyConditionExpression=Key("email").eq(email),
             )
             items = response.get("Items", [])
+            # Include compatible provider records so attendees can see
+            # registrations created before migrating to EventPulse.
+            known_ids = {item.get("registrationId") for item in items}
+            items.extend(item for item in registrations_for(email) if item["registrationId"] not in known_ids)
 
         # Sort by creation date descending (newest first)
         items.sort(key=lambda x: x.get("createdAt", ""), reverse=True)

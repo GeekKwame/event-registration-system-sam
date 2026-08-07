@@ -18,6 +18,10 @@ Parameters:
     Description: >
       Optional email address to receive SNS confirmation emails and
       CloudWatch alarm notifications. Leave blank to skip email setup.
+  ProvidersJson:
+    Type: String
+    Default: '[{"id":"accra-events","baseUrl":"https://mmrq6ebalh.execute-api.us-east-1.amazonaws.com"}]'
+    Description: JSON provider registry. Store authenticated provider settings in Secrets Manager in production.
 
 Conditions:
   HasNotificationEmail: !Not [!Equals [!Ref NotificationEmail, ""]]
@@ -36,6 +40,7 @@ Globals:
         EVENTS_TABLE: !Ref EventsTable
         REGISTRATIONS_TABLE: !Ref RegistrationsTable
         SNS_TOPIC_ARN: !If [HasNotificationEmail, !Ref ConfirmationTopic, ""]
+        PROVIDERS_JSON: !Ref ProvidersJson
   Api:
     Cors:
       AllowMethods: "'GET,POST,DELETE,OPTIONS'"

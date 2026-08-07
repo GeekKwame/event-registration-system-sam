@@ -17,6 +17,7 @@ from datetime import datetime, timezone
 
 import boto3
 from utils.response import build_response, error_response
+from utils.providers import ProviderError, register as register_with_provider
 
 dynamodb = boto3.resource("dynamodb")
 sns = boto3.client("sns")
@@ -35,6 +36,8 @@ def handler(event, context):
         return error_response(400, "Request body must be valid JSON")
 
     event_id = (body.get("eventId") or "").strip()
+    provider_id = (body.get("providerId") or "").strip()
+    source_event_id = (body.get("sourceEventId") or "").strip()
     email = (body.get("email") or "").strip().lower()
     name = (body.get("name") or "").strip()
 
@@ -44,7 +47,41 @@ def handler(event, context):
     if not email or not EMAIL_REGEX.match(email):
         return error_response(400, "A valid email address is required")
 
-    # --- Confirm the event exists ------------------------------------------
+    # --- Register through an external provider, then mirror the result -----
+    # Namespaced IDs prevent two providers' "101" events from colliding.
+    if provider_id:
+        if not source_event_id and event_id.startswith(f"{provider_id}:"):
+            source_event_id = event_id.split(":", 1)[1]
+        if not source_event_id:
+            return error_response(400, "sourceEventId is required for provider events")
+        try:
+            provider_response = register_with_provider(provider_id, source_event_id, email, name)
+        except ProviderError as exc:
+            return error_response(502, str(exc))
+
+        registration_id = str(uuid.uuid4())
+        provider_registration = provider_response.get("registration", provider_response) if isinstance(provider_response, dict) else {}
+        item = {
+            "registrationId": registration_id,
+            "eventId": event_id or f"{provider_id}:{source_event_id}",
+            "sourceEventId": source_event_id,
+            "providerId": provider_id,
+            "email": email,
+            "name": name,
+            "createdAt": datetime.now(timezone.utc).isoformat(),
+            "status": "confirmed",
+            "providerResponse": provider_response,
+        }
+        remote_registration_id = provider_registration.get("registrationId") or provider_registration.get("registration_id") or provider_registration.get("id")
+        if remote_registration_id:
+            item["providerRegistrationId"] = str(remote_registration_id)
+        dynamodb.Table(REGISTRATIONS_TABLE).put_item(Item=item)
+        return build_response(201, {
+            "message": "Registration successful",
+            "registration": item,
+        })
+
+    # --- Confirm the local EventPulse event exists -------------------------
     events_table = dynamodb.Table(EVENTS_TABLE)
     event_item = events_table.get_item(Key={"eventId": event_id}).get("Item")
     if not event_item:

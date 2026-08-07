@@ -6,6 +6,7 @@ with live registration counts computed from Registrations table.
 import os
 import boto3
 from utils.response import build_response, error_response
+from utils.providers import list_events as provider_events
 
 dynamodb = boto3.resource("dynamodb")
 EVENTS_TABLE = os.environ["EVENTS_TABLE"]
@@ -48,6 +49,12 @@ def handler(event, context):
         for item in items:
             eid = item.get("eventId")
             item["registeredCount"] = reg_counts.get(eid, 0)
+
+        # External events are normalized and namespaced by provider. Counts
+        # represent registrations created through EventPulse's canonical API.
+        for item in provider_events():
+            item["registeredCount"] = reg_counts.get(item["eventId"], 0)
+            items.append(item)
 
         items.sort(key=lambda e: e.get("date", ""))
         return build_response(200, {"events": items, "count": len(items)})
