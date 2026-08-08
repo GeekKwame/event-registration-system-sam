@@ -1,6 +1,6 @@
-# ⚡ EventPulse — Event Registration & Ticketing System
+# ⚡ Event-Connect — Universal Multi-API Event Manager & Ticketing Integration Hub
 
-> A modern, serverless web application that replaces manual Microsoft Forms & Excel spreadsheets with automated event registration, capacity management, and instant ticket lookup on Amazon Web Services (AWS).
+> A modern, serverless web application and multi-region integration hub that enables event managers to connect to different AWS event APIs, monitor live capacity, and register attendees seamlessly without building another app.
 
 ---
 

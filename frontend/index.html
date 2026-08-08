@@ -3,8 +3,8 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="description" content="EventPulse helps attendees find available events and helps organisers prevent overcrowding.">
-  <title>EventPulse — Real-Time Event Capacity</title>
+  <meta name="description" content="Event-Connect — Universal Multi-API Event Manager & Ticketing Integration Hub across AWS Regions.">
+  <title>Event-Connect — Universal Multi-API Event Manager</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -16,7 +16,7 @@
     <header class="app-header">
       <div class="header-brand">
         <div class="brand-icon">
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <svg width="26" height="26" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
             <path d="M13 2L3 14H12L11 22L21 10H12L13 2Z" stroke="url(#bolt-grad)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
             <defs>
               <linearGradient id="bolt-grad" x1="3" y1="2" x2="21" y2="22" gradientUnits="userSpaceOnUse">
@@ -27,31 +27,45 @@
           </svg>
         </div>
         <div>
-          <h1 class="brand-title">EventPulse <span class="badge-aws">Live capacity</span></h1>
-          <p class="brand-subtitle">Real-time AWS event ticketing & registration.</p>
+          <h1 class="brand-title">Event-Connect <span class="badge-aws">Universal Event Hub</span></h1>
+          <p class="brand-subtitle">One platform to connect, monitor & register attendees across AWS multi-region APIs.</p>
         </div>
       </div>
       <div class="header-actions">
         <div id="api-status-badge" class="status-badge disconnected">
           <span class="status-dot"></span>
-          <span id="api-status-text">Checking live availability...</span>
+          <span id="api-status-text">Checking live connectivity...</span>
         </div>
       </div>
     </header>
 
-    <!-- API Config Banner -->
+    <!-- API Config & Capstone Quick-Connect Banner -->
     <section class="api-config-banner" id="api-config-section">
       <div class="config-content">
         <div class="config-info">
           <svg class="config-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <path d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9"/>
           </svg>
-          <span class="config-label">API Gateway Base URL:</span>
+          <span class="config-label">Connected API Gateway:</span>
         </div>
         <div class="config-input-group">
-          <input type="url" id="api-url-input" placeholder="https://xyz.execute-api.us-east-1.amazonaws.com/Prod" autocomplete="off" spellcheck="false">
+          <input type="url" id="api-url-input" placeholder="https://kems8drwn6.execute-api.us-west-1.amazonaws.com/Prod" autocomplete="off" spellcheck="false">
           <button id="btn-save-api-url" class="btn btn-secondary">Connect API</button>
         </div>
+      </div>
+
+      <!-- Quick Connect Preset Endpoints Bar -->
+      <div class="quick-connect-bar">
+        <span class="quick-connect-title">Capstone Endpoints:</span>
+        <button type="button" class="btn-preset active" id="preset-my-api" data-url="https://kems8drwn6.execute-api.us-west-1.amazonaws.com/Prod">
+          🟢 My Primary API (us-west-1)
+        </button>
+        <button type="button" class="btn-preset" id="preset-gloria-api" data-url="https://djabididt6.execute-api.us-east-1.amazonaws.com/">
+          🟣 Gloria's API (us-east-1)
+        </button>
+        <button type="button" class="btn-preset" id="preset-dawuni-api" data-url="https://mmrq6ebalh.execute-api.us-east-1.amazonaws.com">
+          🔵 Dawuni's API (us-east-1)
+        </button>
       </div>
     </section>
 
@@ -59,11 +73,11 @@
     <nav class="nav-tabs">
       <button class="tab-btn active" id="tab-events" data-tab="section-events">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
-        Upcoming Events
+        Universal Event Catalog
       </button>
       <button class="tab-btn" id="tab-my-registrations" data-tab="section-my-registrations">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
-        My Registrations
+        All Attendees & Registrations
       </button>
     </nav>
 
@@ -73,13 +87,13 @@
       <section id="section-events" class="tab-content active">
         <section class="hero-panel" aria-labelledby="hero-title">
           <div class="hero-copy">
-            <p class="eyebrow"><span class="live-pulse"></span> EVENT FLOW, MADE SIMPLE</p>
-            <h2 id="hero-title">Find your next great room — before it fills up.</h2>
-            <p>EventPulse gives attendees a clear view of availability and gives organisers confidence that every seat matters.</p>
+            <p class="eyebrow"><span class="live-pulse"></span> UNIVERSAL TICKETING MANAGER</p>
+            <h2 id="hero-title">Manage events & registrations across any AWS region.</h2>
+            <p>Event-Connect normalizes external APIs into one canonical contract — giving event managers full control over seats and attendees.</p>
             <div class="hero-proof">
-              <span>✓ Live seat availability</span>
-              <span>✓ One-click registration</span>
-              <span>✓ Your plans, in one pass</span>
+              <span>✓ Multi-API Integration</span>
+              <span>✓ One-click Cross-System Registration</span>
+              <span>✓ Live SNS Email Alerts</span>
             </div>
           </div>
           <div class="capacity-orbit" aria-label="Live capacity snapshot">
@@ -95,16 +109,25 @@
         </section>
 
         <div class="impact-strip" aria-label="Event flow overview">
-          <div class="impact-stat"><span class="impact-value" id="stat-events">—</span><span>events to explore</span></div>
-          <div class="impact-stat"><span class="impact-value" id="stat-registered">—</span><span>people already going</span></div>
-          <div class="impact-stat"><span class="impact-value" id="stat-capacity">—</span><span>overall capacity</span></div>
-          <div class="impact-message" id="capacity-message">Checking the room…</div>
+          <div class="impact-stat"><span class="impact-value" id="stat-events">—</span><span>events across APIs</span></div>
+          <div class="impact-stat"><span class="impact-value" id="stat-registered">—</span><span>registered attendees</span></div>
+          <div class="impact-stat"><span class="impact-value" id="stat-capacity">—</span><span>total seat capacity</span></div>
+          <div class="impact-message" id="capacity-message">Connecting to AWS event hub…</div>
+        </div>
+
+        <!-- Provider System Filter Bar -->
+        <div class="provider-filter-bar">
+          <span class="filter-label">Filter Provider API:</span>
+          <button type="button" class="btn-filter active" data-provider="all">All Systems</button>
+          <button type="button" class="btn-filter" data-provider="my-hub">My Local Hub</button>
+          <button type="button" class="btn-filter" data-provider="gloria-events">Gloria's System</button>
+          <button type="button" class="btn-filter" data-provider="accra-events">Dawuni's System</button>
         </div>
 
         <div class="section-header">
           <div>
-            <h2>Choose your moment</h2>
-            <p class="section-desc">Every card shows exactly how much room is left.</p>
+            <h2>Universal Event Catalog</h2>
+            <p class="section-desc">Browse live events aggregated across connected AWS API Gateways.</p>
           </div>
           <button id="btn-refresh-events" class="btn btn-icon" title="Refresh Events">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>

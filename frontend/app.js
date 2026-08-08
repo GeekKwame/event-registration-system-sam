@@ -8,7 +8,7 @@ const STORAGE_KEY_API_URL = 'eventpulse_api_url';
 const STORAGE_KEY_LAST_EMAIL = 'eventpulse_last_registration_email';
 
 // Default API Gateway endpoint provided by user
-const DEFAULT_API_URL = 'https://mmrq6ebalh.execute-api.us-east-1.amazonaws.com';
+const DEFAULT_API_URL = 'https://kems8drwn6.execute-api.us-west-1.amazonaws.com/Prod';
 
 const STORAGE_KEY_LOCAL_REGS = 'eventpulse_local_registrations_store';
 
@@ -220,6 +220,30 @@ class EventPulseApp {
     this.btnCloseModal.addEventListener('click', () => this.closeModal());
     this.btnCancelModal.addEventListener('click', () => this.closeModal());
 
+    // Preset Quick-Connect Buttons
+    this.presetButtons = document.querySelectorAll('.btn-preset');
+    this.presetButtons.forEach(btn => {
+      btn.addEventListener('click', () => {
+        const url = normalizeApiUrl(btn.getAttribute('data-url'));
+        this.presetButtons.forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        this.apiUrlInput.value = url;
+        this.setApiUrl(url);
+        this.checkApiStatusAndFetch();
+      });
+    });
+
+    // Provider System Filters
+    this.filterButtons = document.querySelectorAll('.btn-filter');
+    this.filterButtons.forEach(btn => {
+      btn.addEventListener('click', () => {
+        const provider = btn.getAttribute('data-provider');
+        this.filterButtons.forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        this.filterEventsByProvider(provider);
+      });
+    });
+
     // Search Registrations Submit
     this.formSearchEmail.addEventListener('submit', (e) => {
       e.preventDefault();
@@ -377,6 +401,22 @@ class EventPulseApp {
     }
   }
 
+  filterEventsByProvider(provider) {
+    if (!this.events || this.events.length === 0) return;
+    if (!provider || provider === 'all') {
+      this.renderEvents(this.events);
+      return;
+    }
+
+    const filtered = this.events.filter(evt => {
+      const pId = String(evt.providerId || evt.provider_id || '').toLowerCase();
+      if (provider === 'my-hub') return !pId || pId === 'local' || pId === 'my-hub';
+      return pId.includes(provider.toLowerCase());
+    });
+
+    this.renderEvents(filtered);
+  }
+
   renderEvents(eventsList) {
     this.eventsGrid.innerHTML = '';
     this.eventsLoading.classList.add('hidden');
@@ -400,11 +440,22 @@ class EventPulseApp {
       const isFull = regCount >= capacity;
       const dateStr = evt.date || 'TBD';
 
+      const providerId = String(evt.providerId || evt.provider_id || '').toLowerCase();
+      let providerBadgeHtml = '<span class="badge badge-provider-local">My Local Hub</span>';
+      if (providerId.includes('gloria')) {
+        providerBadgeHtml = '<span class="badge badge-provider-gloria">Gloria System (us-east-1)</span>';
+      } else if (providerId.includes('accra') || providerId.includes('dawuni')) {
+        providerBadgeHtml = '<span class="badge badge-provider-dawuni">Dawuni System (us-east-1)</span>';
+      }
+
       card.innerHTML = `
         <div>
           <div class="event-card-header">
             <h3 class="event-card-title">${this.escapeHtml(eventName)}</h3>
-            <span class="badge ${isFull ? '' : 'badge-success'}">${isFull ? 'Full' : 'Open'}</span>
+            <div style="display:flex; gap:6px; align-items:center;">
+              ${providerBadgeHtml}
+              <span class="badge ${isFull ? '' : 'badge-success'}">${isFull ? 'Full' : 'Open'}</span>
+            </div>
           </div>
           <p class="event-card-desc">${this.escapeHtml(evt.description || evt.summary || (evt.location ? `Location: ${evt.location}` : (evt.status ? `Status: ${evt.status}` : 'No description available.')))}</p>
           <div class="event-card-meta">
