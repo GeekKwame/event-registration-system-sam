@@ -14,10 +14,10 @@ Parameters:
     Description: Deployment stage (dev, staging, prod)
   NotificationEmail:
     Type: String
-    Default: ""
+    Default: "dogbeblessingkwame@gmail.com"
     Description: >
-      Optional email address to receive SNS confirmation emails and
-      CloudWatch alarm notifications. Leave blank to skip email setup.
+      Email address to receive SNS confirmation emails and
+      CloudWatch alarm notifications. Enabled by default.
   ProvidersJson:
     Type: String
     Default: '[{"id":"accra-events","baseUrl":"https://mmrq6ebalh.execute-api.us-east-1.amazonaws.com"}]'

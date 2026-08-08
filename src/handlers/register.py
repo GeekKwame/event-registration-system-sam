@@ -79,17 +79,23 @@ def handler(event, context):
 
         if SNS_TOPIC_ARN:
             try:
+                event_name_str = item.get("eventName") or event_id
                 sns.publish(
                     TopicArn=SNS_TOPIC_ARN,
-                    Subject="Event Registration Confirmed",
+                    Subject=f"🎉 Event Registration Confirmed: {event_name_str}",
                     Message=(
-                        f"Hi {name or 'there'},\n\n"
-                        f"You're registered for provider event {event_id}.\n"
-                        f"Registration ID: {registration_id}\n"
+                        f"Hello {name or email},\n\n"
+                        f"Your registration for '{event_name_str}' has been confirmed!\n\n"
+                        f"--- Registration Details ---\n"
+                        f"• Event ID: {event_id}\n"
+                        f"• Participant: {name or 'N/A'} ({email})\n"
+                        f"• Registration Ticket ID: {registration_id}\n"
+                        f"• Date Confirmed: {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')}\n\n"
+                        f"Thank you for using EventPulse Universal Ticketing!"
                     ),
                 )
-            except Exception:
-                pass
+            except Exception as sns_err:
+                print(f"SNS Publish Error: {sns_err}")
 
         return build_response(201, {
             "message": "Registration successful",
@@ -116,20 +122,25 @@ def handler(event, context):
     }
     registrations_table.put_item(Item=item)
 
-    # --- Optional confirmation email via SNS --------------------------------
+    # --- Confirmation email via SNS ----------------------------------------
     if SNS_TOPIC_ARN:
         try:
+            event_name_str = item.get("eventName") or event_id
             sns.publish(
                 TopicArn=SNS_TOPIC_ARN,
-                Subject="Event Registration Confirmed",
+                Subject=f"🎉 Event Registration Confirmed: {event_name_str}",
                 Message=(
-                    f"Hi {name or 'there'},\n\n"
-                    f"You're registered for {item['eventName']}.\n"
-                    f"Registration ID: {registration_id}\n"
+                    f"Hello {name or email},\n\n"
+                    f"Your registration for '{event_name_str}' has been confirmed!\n\n"
+                    f"--- Registration Details ---\n"
+                    f"• Event ID: {event_id}\n"
+                    f"• Participant: {name or 'N/A'} ({email})\n"
+                    f"• Registration Ticket ID: {registration_id}\n"
+                    f"• Date Confirmed: {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')}\n\n"
+                    f"Thank you for using EventPulse Universal Ticketing!"
                 ),
             )
-        except Exception:
-            # Never fail the registration just because the email couldn't send
-            pass
+        except Exception as sns_err:
+            print(f"SNS Publish Error: {sns_err}")
 
     return build_response(201, {"message": "Registration successful", "registration": item})
