@@ -593,21 +593,25 @@ class EventPulseApp {
         }
       }
 
-      const localRegs = getLocalRegistrations();
+      // When connected to API Gateway, server remoteRegs is the authoritative source of truth
+      let combinedList = [];
+      if (this.apiUrl && remoteRegs.length > 0) {
+        combinedList = remoteRegs;
+      } else {
+        const localRegs = getLocalRegistrations();
+        const combinedMap = new Map();
+        [...remoteRegs, ...localRegs].forEach(item => {
+          const id = String(item.registrationId || item.registration_id || item.id || '').trim();
+          if (id && !combinedMap.has(id)) {
+            combinedMap.set(id, item);
+          } else if (!id) {
+            combinedMap.set(Math.random().toString(), item);
+          }
+        });
+        combinedList = Array.from(combinedMap.values());
+      }
 
-      // Deduplicate remote and local registrations by registrationId
-      const combinedMap = new Map();
-      
-      [...remoteRegs, ...localRegs].forEach(item => {
-        const id = String(item.registrationId || item.registration_id || item.id || '').trim();
-        if (id && !combinedMap.has(id)) {
-          combinedMap.set(id, item);
-        } else if (!id) {
-          combinedMap.set(Math.random().toString(), item);
-        }
-      });
-
-      this.allRegistrations = Array.from(combinedMap.values());
+      this.allRegistrations = combinedList;
       this.filterAndRenderRegistrations(this.currentSearchQuery, parentEmail);
     } catch (err) {
       console.error('Error fetching registrations:', err);
