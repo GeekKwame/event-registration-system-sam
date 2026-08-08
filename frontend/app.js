@@ -343,7 +343,9 @@ class EventPulseApp {
           apiRegCount = Math.max(capacity - avail, 0);
         }
 
-        const localCount = getLocalRegistrationCount(id, sourceId);
+        // When connected to API Gateway, server apiRegCount is the authoritative source of truth.
+        // Only fallback to localCount when running in mock mode (no apiUrl).
+        const localCount = !this.apiUrl ? getLocalRegistrationCount(id, sourceId) : 0;
         const totalRegCount = Math.max(apiRegCount, localCount);
 
         const locationStr = item.location || item.venue || item.address || item.place || '';
