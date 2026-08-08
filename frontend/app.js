@@ -10,6 +10,8 @@ const STORAGE_KEY_LAST_EMAIL = 'eventpulse_last_registration_email';
 // Default API Gateway endpoint provided by user
 const DEFAULT_API_URL = 'https://mmrq6ebalh.execute-api.us-east-1.amazonaws.com';
 
+const STORAGE_KEY_LOCAL_REGS = 'eventpulse_local_registrations_store';
+
 function normalizeApiUrl(value) {
   // Accept URLs pasted from prose/Markdown, where a trailing comma is common.
   return String(value || '').trim().replace(/[,\s]+$/, '').replace(/\/+$/, '');
@@ -25,6 +27,38 @@ function unwrapApiPayload(payload) {
     }
   }
   return payload;
+}
+
+function getLocalRegistrations() {
+  try {
+    return JSON.parse(localStorage.getItem(STORAGE_KEY_LOCAL_REGS) || '[]');
+  } catch {
+    return [];
+  }
+}
+
+function saveLocalRegistration(reg) {
+  const regs = getLocalRegistrations();
+  if (!regs.some(r => r.registrationId === reg.registrationId)) {
+    regs.push(reg);
+    localStorage.setItem(STORAGE_KEY_LOCAL_REGS, JSON.stringify(regs));
+  }
+}
+
+function removeLocalRegistration(regId) {
+  const regs = getLocalRegistrations().filter(r => r.registrationId !== regId);
+  localStorage.setItem(STORAGE_KEY_LOCAL_REGS, JSON.stringify(regs));
+}
+
+function getLocalRegistrationCount(eventId, sourceEventId) {
+  const regs = getLocalRegistrations();
+  return regs.filter(r => {
+    const eId = String(eventId || '');
+    const sId = String(sourceEventId || '');
+    const rId = String(r.eventId || r.event_id || '');
+    const rSrcId = String(r.sourceEventId || r.source_event_id || '');
+    return (eId && (rId === eId || rSrcId === eId)) || (sId && (rId === sId || rSrcId === sId));
+  }).length;
 }
 
 // Sample Mock Data (used if API connection is not configured or offline)
@@ -232,6 +266,11 @@ class EventPulseApp {
       this.events = rawList.map(item => {
         const id = String(item.eventId || item.event_id || item.id || item._id || '').trim();
         const name = String(item.eventName || item.name || item.title || 'Untitled Event').trim();
+        const sourceId = String(item.sourceEventId || item.source_event_id || id).trim();
+        const apiRegCount = Number(item.registeredCount ?? item.registered_count ?? item.attendees ?? item.attendeeCount ?? 0);
+        const localCount = getLocalRegistrationCount(id, sourceId);
+        const totalRegCount = Math.max(apiRegCount, localCount);
+
         return {
           ...item,
           eventId: id,
@@ -240,9 +279,9 @@ class EventPulseApp {
           eventName: name,
           name: name,
           providerId: item.providerId || item.provider_id || '',
-          sourceEventId: String(item.sourceEventId || item.source_event_id || item.eventId || item.event_id || item.id || '').trim(),
+          sourceEventId: sourceId,
           capacity: Number(item.capacity ?? item.max_capacity ?? item.total_seats ?? 100),
-          registeredCount: Number(item.registeredCount ?? item.registered_count ?? item.attendees ?? item.attendeeCount ?? 0)
+          registeredCount: totalRegCount
         };
       });
 
@@ -382,7 +421,18 @@ class EventPulseApp {
       const result = unwrapApiPayload(await response.json());
       if (response.ok) {
         const registration = result.registration || result.data || result;
-        const regId = registration.registrationId || registration.registration_id || registration.id || 'OK';
+        const regId = registration.registrationId || registration.registration_id || registration.id || result.registration_id || result.registrationId || 'OK';
+
+        saveLocalRegistration({
+          registrationId: regId,
+          eventId: eventId,
+          event_id: eventId,
+          sourceEventId: this.selectedSourceEventId || eventId,
+          email: email,
+          name: name,
+          createdAt: new Date().toISOString()
+        });
+
         localStorage.setItem(STORAGE_KEY_LAST_EMAIL, email);
         this.currentSearchEmail = email;
         this.searchEmailInput.value = email;
@@ -415,7 +465,7 @@ class EventPulseApp {
             timestamp: new Date().toISOString()
           }
         ];
-        this.renderRegistrations(mockRegs);
+        this.renderRegistrations(mockRegs, email);
       }, 400);
       return;
     }
@@ -424,8 +474,21 @@ class EventPulseApp {
       const res = await fetch(`${this.apiUrl}/registrations/${encodeURIComponent(email)}`);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = unwrapApiPayload(await res.json());
-      const regs = Array.isArray(data) ? data : (data.registrations || data.data || data.items || data.results || []);
-      this.renderRegistrations(regs);
+      const remoteRegs = Array.isArray(data) ? data : (data.registrations || data.data || data.items || data.results || []);
+      const parentEmail = (data && data.email) || email;
+
+      const localRegs = getLocalRegistrations().filter(r => String(r.email || '').toLowerCase() === String(email || '').toLowerCase());
+      
+      // Deduplicate remote and local registrations by registrationId
+      const combined = [...remoteRegs];
+      const remoteIds = new Set(remoteRegs.map(r => r.registrationId || r.registration_id || r.id));
+      localRegs.forEach(lr => {
+        if (!remoteIds.has(lr.registrationId)) {
+          combined.push(lr);
+        }
+      });
+
+      this.renderRegistrations(combined, parentEmail);
     } catch (err) {
       console.error('Error fetching registrations:', err);
       this.showToast('Error querying registrations endpoint', 'error');
@@ -434,7 +497,7 @@ class EventPulseApp {
     }
   }
 
-  renderRegistrations(regsList) {
+  renderRegistrations(regsList, defaultEmail = '') {
     this.regsList.innerHTML = '';
     if (!regsList || regsList.length === 0) {
       this.regsEmpty.classList.remove('hidden');
@@ -449,17 +512,30 @@ class EventPulseApp {
       item.className = 'reg-item';
 
       const regId = reg.registrationId || reg.registration_id || reg.id || reg._id || 'N/A';
-      const eventId = reg.eventId || reg.event_id || reg.eventID || 'N/A';
-      const name = reg.name || 'Participant';
-      const email = reg.email || 'N/A';
+      const eventId = String(reg.eventId || reg.event_id || reg.sourceEventId || 'N/A').trim();
+      
+      const foundEvt = this.events.find(e => 
+        String(e.eventId) === eventId || 
+        String(e.event_id) === eventId || 
+        String(e.sourceEventId) === eventId || 
+        String(e.id) === eventId
+      );
+      const eventName = reg.eventName || (foundEvt ? (foundEvt.eventName || foundEvt.name) : null) || `Event ID: ${eventId}`;
+
+      const email = reg.email || defaultEmail || this.currentSearchEmail || 'N/A';
+      const nameStr = reg.name ? String(reg.name).trim() : '';
+      const participantInfo = nameStr && nameStr.toLowerCase() !== 'participant'
+        ? `<strong>${this.escapeHtml(nameStr)}</strong> (${this.escapeHtml(email)})` 
+        : `<strong>${this.escapeHtml(email)}</strong>`;
+
       const dateVal = reg.createdAt || reg.registered_at || reg.timestamp;
 
       item.innerHTML = `
         <div class="reg-info">
-          <h4>${this.escapeHtml(reg.eventName || `Event ID: ${eventId}`)}</h4>
+          <h4>${this.escapeHtml(eventName)}</h4>
           <div class="reg-meta">
-            <span>Participant: <strong>${this.escapeHtml(name)}</strong> (${this.escapeHtml(email)})</span>
-            <span>Registration ID: <code>${regId}</code></span>
+            <span>Participant: ${participantInfo}</span>
+            <span>Registration ID: <code>${this.escapeHtml(regId)}</code></span>
             ${dateVal ? `<span>Date: ${new Date(dateVal).toLocaleDateString()}</span>` : ''}
           </div>
         </div>
@@ -483,6 +559,7 @@ class EventPulseApp {
     }
 
     if (!this.apiUrl) {
+      removeLocalRegistration(registrationId);
       this.showToast(`Registration ${registrationId} cancelled (Demo Mode)`, 'success');
       this.fetchRegistrations(this.currentSearchEmail);
       return;
@@ -495,10 +572,12 @@ class EventPulseApp {
       });
 
       if (res.ok) {
+        removeLocalRegistration(registrationId);
         this.showToast('Registration cancelled successfully!', 'success');
+        this.fetchEvents();
         this.fetchRegistrations(this.currentSearchEmail);
       } else {
-        const errData = await res.json();
+        const errData = unwrapApiPayload(await res.json());
         this.showToast(errData.error || errData.message || 'Failed to cancel registration', 'error');
       }
     } catch (err) {
