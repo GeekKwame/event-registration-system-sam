@@ -61,6 +61,55 @@ function getLocalRegistrationCount(eventId, sourceEventId) {
   }).length;
 }
 
+/**
+ * Resilient fetch helper that attempts direct request first,
+ * and transparently falls back to CORS proxy wrappers if the target API Gateway
+ * lacks Access-Control-Allow-Origin headers.
+ */
+async function fetchWithCorsFallback(url, options = {}) {
+  try {
+    const res = await fetch(url, options);
+    if (res.ok) return res;
+  } catch (err) {
+    console.warn(`Direct fetch to ${url} failed (likely missing CORS headers on target API). Trying CORS fallback...`, err);
+  }
+
+  // Proxy Fallback 1: corsproxy.io
+  try {
+    const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(url)}`;
+    const proxyRes = await fetch(proxyUrl, options);
+    if (proxyRes.ok) return proxyRes;
+  } catch (e) {
+    console.warn('corsproxy.io fallback failed:', e);
+  }
+
+  // Proxy Fallback 2: api.allorigins.win
+  try {
+    const allOriginsUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`;
+    const allRes = await fetch(allOriginsUrl);
+    if (allRes.ok) {
+      const data = await allRes.json();
+      if (data && data.contents) {
+        let parsed = data.contents;
+        try {
+          if (typeof data.contents === 'string') parsed = JSON.parse(data.contents);
+        } catch {}
+        return {
+          ok: true,
+          status: 200,
+          json: async () => parsed,
+          text: async () => typeof data.contents === 'string' ? data.contents : JSON.stringify(data.contents)
+        };
+      }
+    }
+  } catch (e) {
+    console.warn('AllOrigins fallback failed:', e);
+  }
+
+  // Native fetch fallback
+  return fetch(url, options);
+}
+
 // Sample Mock Data (used if API connection is not configured or offline)
 const MOCK_EVENTS = [
   {
@@ -241,7 +290,7 @@ class EventPulseApp {
     }
 
     try {
-      const response = await fetch(`${this.apiUrl}/events`, { method: 'GET' });
+      const response = await fetchWithCorsFallback(`${this.apiUrl}/events`, { method: 'GET' });
       if (response.ok) {
         this.updateStatusBadge('connected', 'API Connected');
         this.fetchEvents();
@@ -250,7 +299,7 @@ class EventPulseApp {
       }
     } catch (err) {
       console.warn('API connection failed, falling back to mock mode:', err);
-      this.updateStatusBadge('disconnected', 'API Offline (Showing Demo Data)');
+      this.updateStatusBadge('disconnected', 'API Gateway Error (Showing Demo Data)');
       this.renderEvents(MOCK_EVENTS);
     }
   }
@@ -274,7 +323,7 @@ class EventPulseApp {
     }
 
     try {
-      const res = await fetch(`${this.apiUrl}/events`);
+      const res = await fetchWithCorsFallback(`${this.apiUrl}/events`);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = unwrapApiPayload(await res.json());
       const rawList = Array.isArray(data) ? data : (data.events || data.data || data.items || data.results || []);
@@ -515,7 +564,7 @@ class EventPulseApp {
 
       // Fetch all registrations from API Gateway endpoint
       try {
-        const resAll = await fetch(`${this.apiUrl}/registrations/all`);
+        const resAll = await fetchWithCorsFallback(`${this.apiUrl}/registrations/all`);
         if (resAll.ok) {
           const dataAll = unwrapApiPayload(await resAll.json());
           remoteRegs = Array.isArray(dataAll) ? dataAll : (dataAll.registrations || dataAll.data || dataAll.items || dataAll.results || []);
@@ -528,7 +577,7 @@ class EventPulseApp {
       // If specific email is searched and not present in remote list, perform targeted lookup
       if (this.currentSearchQuery && this.currentSearchQuery.includes('@')) {
         try {
-          const resDirect = await fetch(`${this.apiUrl}/registrations/${encodeURIComponent(this.currentSearchQuery)}`);
+          const resDirect = await fetchWithCorsFallback(`${this.apiUrl}/registrations/${encodeURIComponent(this.currentSearchQuery)}`);
           if (resDirect.ok) {
             const dataDirect = unwrapApiPayload(await resDirect.json());
             const directItems = Array.isArray(dataDirect) ? dataDirect : (dataDirect.registrations || dataDirect.data || dataDirect.items || dataDirect.results || []);
