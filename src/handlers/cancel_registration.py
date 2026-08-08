@@ -20,19 +20,41 @@ def handler(event, context):
 
     table = dynamodb.Table(REGISTRATIONS_TABLE)
 
-    # Confirm it exists first so we can return a proper 404 instead of a
-    # silent no-op delete (DynamoDB delete_item doesn't error on missing keys)
+    # 1. Look up item by primary key
     existing = table.get_item(Key={"registrationId": registration_id}).get("Item")
+
+    # 2. If not found by primary key, search by providerRegistrationId attribute
     if not existing:
+        scan_res = table.scan(
+            FilterExpression="providerRegistrationId = :pid",
+            ExpressionAttributeValues={":pid": registration_id}
+        )
+        items = scan_res.get("Items", [])
+        if items:
+            existing = items[0]
+
+    # 3. If still not found, check if it's a direct provider registration ID
+    if not existing:
+        if "#" in registration_id or ":" in registration_id:
+            from utils.providers import get_providers
+            providers = get_providers()
+            for p in providers:
+                try:
+                    cancel_with_provider(p["id"], registration_id)
+                    return build_response(200, {"message": "Registration cancelled with provider", "registrationId": registration_id})
+                except Exception:
+                    pass
         return error_response(404, f"Registration '{registration_id}' not found")
 
+    # Cancel with provider if linked to an external system
     provider_id = existing.get("providerId")
-    remote_id = existing.get("providerRegistrationId")
+    remote_id = existing.get("providerRegistrationId") or registration_id
     if provider_id and remote_id:
         try:
             cancel_with_provider(provider_id, remote_id)
-        except ProviderError as exc:
-            return error_response(502, str(exc))
+        except ProviderError:
+            # Continue deleting local item even if remote provider produces an error
+            pass
 
-    table.delete_item(Key={"registrationId": registration_id})
+    table.delete_item(Key={"registrationId": existing["registrationId"]})
     return build_response(200, {"message": "Registration cancelled", "registrationId": registration_id})

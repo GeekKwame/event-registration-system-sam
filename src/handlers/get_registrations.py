@@ -19,8 +19,8 @@ def handler(event, context):
 
     table = dynamodb.Table(REGISTRATIONS_TABLE)
     try:
+        items = []
         if email == "all" or not email:
-            items = []
             response = table.scan()
             items.extend(response.get("Items", []))
             while "LastEvaluatedKey" in response:
@@ -31,14 +31,26 @@ def handler(event, context):
                 IndexName="EmailIndex",
                 KeyConditionExpression=Key("email").eq(email),
             )
-            items = response.get("Items", [])
-            # Include compatible provider records so attendees can see
-            # registrations created before migrating to EventPulse.
-            known_ids = {item.get("registrationId") for item in items}
-            items.extend(item for item in registrations_for(email) if item["registrationId"] not in known_ids)
+            items.extend(response.get("Items", []))
+
+        # Collect known IDs (both local registrationId and providerRegistrationId)
+        known_ids = set()
+        for item in items:
+            if item.get("registrationId"):
+                known_ids.add(str(item["registrationId"]))
+            if item.get("providerRegistrationId"):
+                known_ids.add(str(item["providerRegistrationId"]))
+
+        # Include compatible provider records without creating duplicates
+        remote_provider_items = registrations_for(email if email != "all" else "")
+        for p_item in remote_provider_items:
+            p_id = str(p_item.get("registrationId") or p_item.get("registration_id") or p_item.get("id") or "")
+            if p_id and p_id not in known_ids:
+                items.append(p_item)
+                known_ids.add(p_id)
 
         # Sort by creation date descending (newest first)
-        items.sort(key=lambda x: x.get("createdAt", ""), reverse=True)
+        items.sort(key=lambda x: x.get("createdAt", "") or x.get("registered_at", ""), reverse=True)
         return build_response(200, {"registrations": items, "count": len(items)})
 
     except Exception as exc:

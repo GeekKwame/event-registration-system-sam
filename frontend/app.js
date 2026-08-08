@@ -643,10 +643,31 @@ class EventPulseApp {
       return;
     }
 
+    // Deduplicate items by registrationId and providerRegistrationId
+    const seenIds = new Set();
+    const uniqueList = [];
+
+    regsList.forEach(reg => {
+      const regId = String(reg.registrationId || reg.registration_id || reg.id || reg._id || '').trim();
+      const providerRegId = String(reg.providerRegistrationId || reg.provider_registration_id || '').trim();
+
+      const isSeen = (regId && seenIds.has(regId)) || (providerRegId && seenIds.has(providerRegId));
+      if (!isSeen) {
+        if (regId) seenIds.add(regId);
+        if (providerRegId) seenIds.add(providerRegId);
+        uniqueList.push(reg);
+      }
+    });
+
+    if (uniqueList.length === 0) {
+      this.regsEmpty.classList.remove('hidden');
+      return;
+    }
+
     this.regsEmpty.classList.add('hidden');
     this.regsList.classList.remove('hidden');
 
-    regsList.forEach(reg => {
+    uniqueList.forEach(reg => {
       const item = document.createElement('div');
       item.className = 'reg-item';
 
