@@ -271,6 +271,16 @@ class EventPulseApp {
   initApp() {
     if (this.apiUrl) {
       this.apiUrlInput.value = this.apiUrl;
+      if (this.presetButtons) {
+        this.presetButtons.forEach(btn => {
+          const btnUrl = normalizeApiUrl(btn.getAttribute('data-url'));
+          if (btnUrl === this.apiUrl) {
+            btn.classList.add('active');
+          } else {
+            btn.classList.remove('active');
+          }
+        });
+      }
     }
     this.checkApiStatusAndFetch();
   }
@@ -362,8 +372,8 @@ class EventPulseApp {
         let apiRegCount = 0;
         if (item.registeredCount !== undefined || item.registered_count !== undefined || item.attendees !== undefined || item.attendeeCount !== undefined) {
           apiRegCount = Number(item.registeredCount ?? item.registered_count ?? item.attendees ?? item.attendeeCount ?? 0);
-        } else if (item.availableSeats !== undefined || item.available_seats !== undefined) {
-          const avail = Number(item.availableSeats ?? item.available_seats ?? capacity);
+        } else if (item.availableSeats !== undefined || item.available_seats !== undefined || item.availableSpots !== undefined || item.available_spots !== undefined) {
+          const avail = Number(item.availableSeats ?? item.available_seats ?? item.availableSpots ?? item.available_spots ?? capacity);
           apiRegCount = Math.max(capacity - avail, 0);
         }
 
