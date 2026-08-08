@@ -25,6 +25,33 @@ def handler(event, context):
             response = events_table.scan(ExclusiveStartKey=response["LastEvaluatedKey"])
             items.extend(response.get("Items", []))
 
+        # Auto-seed local events into DynamoDB if table is currently empty
+        if not items:
+            default_events = [
+                {
+                    "eventId": "evt-001",
+                    "eventName": "AWS Workshop Accra 2026",
+                    "date": "2026-08-15",
+                    "location": "Accra Digital Center",
+                    "capacity": 30,
+                    "description": "Hands-on serverless workshop with AWS SAM and Lambda."
+                },
+                {
+                    "eventId": "evt-002",
+                    "eventName": "Cloud Native Kumasi Summit",
+                    "date": "2026-08-20",
+                    "location": "KNUST Tech Hub",
+                    "capacity": 50,
+                    "description": "Exploring Kubernetes, Serverless, and DevOps practices."
+                }
+            ]
+            for seed_evt in default_events:
+                try:
+                    events_table.put_item(Item=seed_evt)
+                except Exception:
+                    pass
+            items = list(default_events)
+
         # Compute dynamic registeredCount for each event
         reg_counts = {}
         if REGISTRATIONS_TABLE:
