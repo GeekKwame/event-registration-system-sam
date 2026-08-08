@@ -65,4 +65,4 @@ jobs:
             --no-confirm-changeset \
             --no-fail-on-empty-changeset \
             --resolve-s3 \
-            --parameter-overrides Stage=prod NotificationEmail="dogbeblessingkwame@gmail.com"
+            --parameter-overrides Stage=prod NotificationEmail=dogbeblessingkwame@gmail.com
