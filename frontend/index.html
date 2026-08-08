@@ -15,8 +15,8 @@
     <!-- Header -->
     <header class="app-header">
       <div class="header-brand">
-        <div class="brand-icon">
-          <svg width="26" height="26" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <div class="brand-icon" aria-hidden="true">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
             <path d="M13 2L3 14H12L11 22L21 10H12L13 2Z" stroke="url(#bolt-grad)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
             <defs>
               <linearGradient id="bolt-grad" x1="3" y1="2" x2="21" y2="22" gradientUnits="userSpaceOnUse">
@@ -27,194 +27,197 @@
           </svg>
         </div>
         <div>
-          <h1 class="brand-title">Event-Connect <span class="badge-aws">Universal Event Hub</span></h1>
-          <p class="brand-subtitle">One platform to connect, monitor & register attendees across AWS multi-region APIs.</p>
+          <h1 class="brand-title">Event-Connect <span class="badge-aws">Universal Hub</span></h1>
+          <p class="brand-subtitle">Connect, monitor & register attendees across AWS multi-region APIs</p>
         </div>
       </div>
       <div class="header-actions">
         <div id="api-status-badge" class="status-badge disconnected">
-          <span class="status-dot"></span>
-          <span id="api-status-text">Checking live connectivity...</span>
+          <span class="status-dot" aria-hidden="true"></span>
+          <span id="api-status-text">Checking connectivity…</span>
         </div>
       </div>
     </header>
 
-    <!-- API Config & Capstone Quick-Connect Banner -->
-    <section class="api-config-banner" id="api-config-section">
+    <!-- API Config & Quick-Connect -->
+    <section class="api-config-banner" id="api-config-section" aria-label="API Configuration">
       <div class="config-content">
         <div class="config-info">
-          <svg class="config-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <svg class="config-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
             <path d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9"/>
           </svg>
-          <span class="config-label">Connected API Gateway:</span>
+          <span class="config-label">API Gateway:</span>
         </div>
         <div class="config-input-group">
-          <input type="url" id="api-url-input" placeholder="https://kems8drwn6.execute-api.us-west-1.amazonaws.com/Prod" autocomplete="off" spellcheck="false">
-          <button id="btn-save-api-url" class="btn btn-secondary">Connect API</button>
+          <input type="url" id="api-url-input" placeholder="https://your-api.execute-api.region.amazonaws.com/Prod" autocomplete="off" spellcheck="false" aria-label="API Gateway endpoint URL">
+          <button id="btn-save-api-url" class="btn btn-secondary">Connect</button>
         </div>
       </div>
 
-      <!-- Quick Connect Preset Endpoints Bar -->
-      <div class="quick-connect-bar">
-        <span class="quick-connect-title">Capstone Endpoints:</span>
+      <div class="quick-connect-bar" role="group" aria-label="Quick connect presets">
+        <span class="quick-connect-title">Presets:</span>
         <button type="button" class="btn-preset active" id="preset-my-api" data-url="https://kems8drwn6.execute-api.us-west-1.amazonaws.com/Prod">
-          🟢 My Primary API (us-west-1)
+          🟢 My API (us-west-1)
         </button>
         <button type="button" class="btn-preset" id="preset-gloria-api" data-url="https://djabididt6.execute-api.us-east-1.amazonaws.com">
-          🟣 Gloria's API (us-east-1)
+          🟣 Gloria (us-east-1)
         </button>
         <button type="button" class="btn-preset" id="preset-dawuni-api" data-url="https://mmrq6ebalh.execute-api.us-east-1.amazonaws.com">
-          🔵 Dawuni's API (us-east-1)
+          🔵 Dawuni (us-east-1)
         </button>
       </div>
     </section>
 
     <!-- Navigation Tabs -->
-    <nav class="nav-tabs">
-      <button class="tab-btn active" id="tab-events" data-tab="section-events">
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
-        Universal Event Catalog
+    <nav class="nav-tabs" role="tablist" aria-label="Main navigation">
+      <button class="tab-btn active" id="tab-events" data-tab="section-events" role="tab" aria-selected="true" aria-controls="section-events">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+        Events
       </button>
-      <button class="tab-btn" id="tab-my-registrations" data-tab="section-my-registrations">
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
-        All Attendees & Registrations
+      <button class="tab-btn" id="tab-my-registrations" data-tab="section-my-registrations" role="tab" aria-selected="false" aria-controls="section-my-registrations">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+        Registrations
+        <span class="tab-count" id="tab-reg-count" aria-label="Registration count"></span>
       </button>
     </nav>
 
-    <!-- Main Content Sections -->
+    <!-- Main Content -->
     <main class="main-content">
-      <!-- Section: Events Grid -->
-      <section id="section-events" class="tab-content active">
-        <section class="hero-panel" aria-labelledby="hero-title">
+      <!-- Section: Events -->
+      <section id="section-events" class="tab-content active" role="tabpanel" aria-labelledby="tab-events">
+        <!-- Hero -->
+        <section class="hero-panel" aria-label="Dashboard overview">
           <div class="hero-copy">
-            <p class="eyebrow"><span class="live-pulse"></span> UNIVERSAL TICKETING MANAGER</p>
+            <p class="eyebrow"><span class="live-pulse" aria-hidden="true"></span> Event Hub</p>
             <h2 id="hero-title">Manage events & registrations across any AWS region.</h2>
-            <p>Event-Connect normalizes external APIs into one canonical contract — giving event managers full control over seats and attendees.</p>
+            <p>Normalize external APIs into one canonical view — full control over seats and attendees.</p>
             <div class="hero-proof">
               <span>✓ Multi-API Integration</span>
-              <span>✓ One-click Cross-System Registration</span>
-              <span>✓ Live SNS Email Alerts</span>
+              <span>✓ Cross-System Registration</span>
+              <span>✓ Live SNS Alerts</span>
             </div>
           </div>
           <div class="capacity-orbit" aria-label="Live capacity snapshot">
-            <div class="orbit-ring orbit-ring-one"></div>
-            <div class="orbit-ring orbit-ring-two"></div>
+            <div class="orbit-ring orbit-ring-one" aria-hidden="true"></div>
             <div class="orbit-center">
               <strong id="hero-available-seats">—</strong>
               <span>seats open</span>
             </div>
             <span class="orbit-label label-top">LIVE</span>
-            <span class="orbit-label label-bottom" id="hero-events-count">Loading events</span>
+            <span class="orbit-label label-bottom" id="hero-events-count">Loading…</span>
           </div>
         </section>
 
-        <div class="impact-strip" aria-label="Event flow overview">
+        <!-- Stats Strip -->
+        <div class="impact-strip" aria-label="Event statistics">
           <div class="impact-stat"><span class="impact-value" id="stat-events">—</span><span>events across APIs</span></div>
           <div class="impact-stat"><span class="impact-value" id="stat-registered">—</span><span>registered attendees</span></div>
           <div class="impact-stat"><span class="impact-value" id="stat-capacity">—</span><span>total seat capacity</span></div>
-          <div class="impact-message" id="capacity-message">Connecting to AWS event hub…</div>
+          <div class="impact-message" id="capacity-message" aria-live="polite">Connecting to event hub…</div>
         </div>
 
-        <!-- Provider System Filter Bar -->
-        <div class="provider-filter-bar">
-          <span class="filter-label">Filter Provider API:</span>
+        <!-- Provider Filter -->
+        <div class="provider-filter-bar" role="group" aria-label="Filter by provider">
+          <span class="filter-label">Provider:</span>
           <button type="button" class="btn-filter active" data-provider="all">All Systems</button>
           <button type="button" class="btn-filter" data-provider="my-hub">My Local Hub</button>
           <button type="button" class="btn-filter" data-provider="gloria-events">Gloria's System</button>
           <button type="button" class="btn-filter" data-provider="accra-events">Dawuni's System</button>
         </div>
 
+        <!-- Section Header -->
         <div class="section-header">
           <div>
-            <h2>Universal Event Catalog</h2>
-            <p class="section-desc">Browse live events aggregated across connected AWS API Gateways.</p>
+            <h2>Event Catalog</h2>
+            <p class="section-desc">Browse live events aggregated across connected API Gateways.</p>
           </div>
-          <button id="btn-refresh-events" class="btn btn-icon" title="Refresh Events">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+          <button id="btn-refresh-events" class="btn btn-icon" aria-label="Refresh events">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
             Refresh
           </button>
         </div>
 
-        <div id="events-loading" class="loading-spinner-container">
-          <div class="spinner"></div>
-          <p>Fetching events from AWS API Gateway...</p>
+        <!-- Loading State -->
+        <div id="events-loading" class="loading-spinner-container" aria-live="polite">
+          <div class="spinner" aria-hidden="true"></div>
+          <p>Fetching events from API Gateway…</p>
         </div>
 
-        <div id="events-grid" class="events-grid hidden">
-          <!-- Dynamic Event Cards injected here -->
+        <!-- Events Grid -->
+        <div id="events-grid" class="events-grid hidden" aria-live="polite">
+          <!-- Dynamic event cards injected by app.js -->
         </div>
 
+        <!-- Empty State -->
         <div id="events-empty" class="empty-state hidden">
-          <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"/></svg>
-          <h3>No events are live yet</h3>
-          <p>Connect your API or run `python scripts/seed_events.py` to open the first experiences.</p>
+          <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"/></svg>
+          <h3>No events found</h3>
+          <p>Connect an API endpoint or check your network connection to load events.</p>
         </div>
       </section>
 
-      <!-- Section: My Registrations -->
-      <section id="section-my-registrations" class="tab-content hidden">
+      <!-- Section: Registrations -->
+      <section id="section-my-registrations" class="tab-content hidden" role="tabpanel" aria-labelledby="tab-my-registrations">
         <div class="section-header">
           <div>
-            <h2>All Registered Users & Passes</h2>
-            <p class="section-desc">View all registered attendees across events, or search for a specific user by email or name.</p>
+            <h2>Registrations</h2>
+            <p class="section-desc">View all registered attendees. Search by email, name, or event ID.</p>
           </div>
         </div>
 
         <div class="search-card">
           <form id="form-search-email" class="search-form">
             <div class="form-group flex-1">
-              <label for="search-email-input">Search Registered Users</label>
-              <input type="text" id="search-email-input" placeholder="Search by email, name, or event ID (leave blank to show all)..." autocomplete="off" spellcheck="false">
+              <label for="search-email-input">Search registrations</label>
+              <input type="text" id="search-email-input" placeholder="Email, name, or event ID…" autocomplete="off" spellcheck="false">
             </div>
             <button type="submit" class="btn btn-primary" id="btn-search-email">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
               Search
             </button>
-            <button type="button" class="btn btn-secondary" id="btn-clear-search">
-              Show All
-            </button>
+            <button type="button" class="btn btn-secondary" id="btn-clear-search">Show All</button>
           </form>
         </div>
 
-        <div id="regs-loading" class="loading-spinner-container hidden">
-          <div class="spinner"></div>
-          <p>Fetching registered users from API Gateway...</p>
+        <div id="regs-loading" class="loading-spinner-container hidden" aria-live="polite">
+          <div class="spinner" aria-hidden="true"></div>
+          <p>Fetching registrations…</p>
         </div>
 
-        <div id="regs-list" class="regs-list hidden">
-          <!-- Dynamic Registration Cards injected here -->
+        <div id="regs-list" class="regs-list hidden" aria-live="polite">
+          <!-- Dynamic registration items injected by app.js -->
         </div>
 
         <div id="regs-empty" class="empty-state hidden">
-          <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
-          <h3>No Registrations Found</h3>
-          <p>No active registrations matched the search term. Try searching for another email or click "Show All".</p>
+          <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+          <h3>No registrations found</h3>
+          <p>No active registrations matched the search. Try another query or click "Show All".</p>
         </div>
       </section>
     </main>
 
     <!-- Registration Modal -->
-    <div id="register-modal" class="modal-overlay hidden">
+    <div id="register-modal" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="modal-event-title">
       <div class="modal-card">
         <div class="modal-header">
           <div>
             <h3 id="modal-event-title">Register for Event</h3>
-            <span id="modal-event-badge" class="badge">Event ID: -</span>
+            <span id="modal-event-badge" class="badge">Event ID: —</span>
           </div>
-          <button id="btn-close-modal" class="btn-close">&times;</button>
+          <button id="btn-close-modal" class="btn-close" aria-label="Close dialog">&times;</button>
         </div>
         <form id="form-register" class="modal-form">
           <input type="hidden" id="modal-event-id">
-          
+
           <div class="form-group">
-            <label for="reg-name-input">Full Name *</label>
-            <input type="text" id="reg-name-input" placeholder="e.g. Jane Doe" required>
+            <label for="reg-name-input">Full Name <span aria-hidden="true">*</span></label>
+            <input type="text" id="reg-name-input" placeholder="Jane Doe" required aria-required="true">
           </div>
 
           <div class="form-group">
-            <label for="reg-email-input">Email Address *</label>
-            <input type="email" id="reg-email-input" placeholder="e.g. jane@example.com" required>
-            <span class="form-hint">Your confirmation is ready as soon as registration is complete.</span>
+            <label for="reg-email-input">Email Address <span aria-hidden="true">*</span></label>
+            <input type="email" id="reg-email-input" placeholder="jane@example.com" required aria-required="true">
+            <span class="form-hint">You'll receive a confirmation once registered.</span>
           </div>
 
           <div class="modal-footer">
@@ -225,8 +228,22 @@
       </div>
     </div>
 
+    <!-- Confirmation Dialog (for cancel actions) -->
+    <div id="confirm-dialog" class="modal-overlay hidden" role="alertdialog" aria-modal="true" aria-labelledby="confirm-dialog-title">
+      <div class="modal-card" style="max-width: 380px;">
+        <div class="confirm-dialog">
+          <h3 id="confirm-dialog-title" style="font: 600 var(--text-lg)/1.3 var(--font-heading); color: var(--ink); margin-bottom: var(--space-2);">Cancel Registration?</h3>
+          <p id="confirm-dialog-message">This action cannot be undone.</p>
+          <div class="confirm-actions">
+            <button type="button" class="btn btn-secondary" id="confirm-dialog-cancel">Keep It</button>
+            <button type="button" class="btn btn-danger" id="confirm-dialog-confirm">Yes, Cancel</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <!-- Toast Container -->
-    <div id="toast-container" class="toast-container"></div>
+    <div id="toast-container" class="toast-container" aria-live="polite"></div>
   </div>
 
   <script src="app.js"></script>

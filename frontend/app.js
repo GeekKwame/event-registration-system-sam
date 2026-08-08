@@ -1,40 +1,38 @@
 /**
- * QueueLess Frontend Application
- * Interacts directly with AWS SAM API Gateway & Lambda Handlers
+ * Event-Connect — Frontend Application
+ * Universal Multi-API Event Manager & Ticketing Hub
+ *
+ * Connects to AWS SAM API Gateway & Lambda handlers.
+ * All business logic (fetch, register, cancel, CORS fallback) is preserved.
  */
 
-// Store a user-selected endpoint without losing the working default.
+// ============================================================
+// Constants & Storage Keys
+// ============================================================
 const STORAGE_KEY_API_URL = 'eventpulse_api_url';
 const STORAGE_KEY_LAST_EMAIL = 'eventpulse_last_registration_email';
-
-// Default API Gateway endpoint provided by user
-const DEFAULT_API_URL = 'https://kems8drwn6.execute-api.us-west-1.amazonaws.com/Prod';
-
 const STORAGE_KEY_LOCAL_REGS = 'eventpulse_local_registrations_store';
 
+const DEFAULT_API_URL = 'https://kems8drwn6.execute-api.us-west-1.amazonaws.com/Prod';
+
+// ============================================================
+// Utility Functions
+// ============================================================
+
 function normalizeApiUrl(value) {
-  // Accept URLs pasted from prose/Markdown, where a trailing comma is common.
   return String(value || '').trim().replace(/[,\s]+$/, '').replace(/\/+$/, '');
 }
 
 function unwrapApiPayload(payload) {
-  // Supports direct JSON responses and API Gateway/Lambda proxy envelopes.
   if (payload && typeof payload.body === 'string') {
-    try {
-      return JSON.parse(payload.body);
-    } catch {
-      return payload;
-    }
+    try { return JSON.parse(payload.body); } catch { return payload; }
   }
   return payload;
 }
 
 function getLocalRegistrations() {
-  try {
-    return JSON.parse(localStorage.getItem(STORAGE_KEY_LOCAL_REGS) || '[]');
-  } catch {
-    return [];
-  }
+  try { return JSON.parse(localStorage.getItem(STORAGE_KEY_LOCAL_REGS) || '[]'); }
+  catch { return []; }
 }
 
 function saveLocalRegistration(reg) {
@@ -62,16 +60,14 @@ function getLocalRegistrationCount(eventId, sourceEventId) {
 }
 
 /**
- * Resilient fetch helper that attempts direct request first,
- * and transparently falls back to CORS proxy wrappers if the target API Gateway
- * lacks Access-Control-Allow-Origin headers.
+ * Resilient fetch with CORS proxy fallbacks.
  */
 async function fetchWithCorsFallback(url, options = {}) {
   try {
     const res = await fetch(url, options);
     if (res.ok) return res;
   } catch (err) {
-    console.warn(`Direct fetch to ${url} failed (likely missing CORS headers on target API). Trying CORS fallback...`, err);
+    console.warn(`Direct fetch to ${url} failed. Trying CORS fallback...`, err);
   }
 
   // Proxy Fallback 1: corsproxy.io
@@ -106,70 +102,78 @@ async function fetchWithCorsFallback(url, options = {}) {
     console.warn('AllOrigins fallback failed:', e);
   }
 
-  // Native fetch fallback
   return fetch(url, options);
 }
 
-// Sample Mock Data (used if API connection is not configured or offline)
+// ============================================================
+// Mock Data (offline / demo mode)
+// ============================================================
 const MOCK_EVENTS = [
   {
-    eventId: 'evt-101',
-    event_id: 'evt-101',
+    eventId: 'evt-101', event_id: 'evt-101',
     name: 'AWS Cloud Tech Summit 2026',
-    date: '2026-09-15',
-    capacity: 150,
-    registeredCount: 42,
+    date: '2026-09-15', capacity: 150, registeredCount: 42,
     description: 'Explore the latest in serverless architectures, DynamoDB optimizations, and AI integration on AWS.'
   },
   {
-    eventId: 'evt-102',
-    event_id: 'evt-102',
+    eventId: 'evt-102', event_id: 'evt-102',
     name: 'Serverless Python Masterclass',
-    date: '2026-10-01',
-    capacity: 80,
-    registeredCount: 78,
+    date: '2026-10-01', capacity: 80, registeredCount: 78,
     description: 'Deep dive into building high-throughput Python 3.12 Lambdas and Infrastructure-as-Code with SAM.'
   },
   {
-    eventId: 'evt-103',
-    event_id: 'evt-103',
+    eventId: 'evt-103', event_id: 'evt-103',
     name: 'DevOps & CI/CD Pipeline Workshop',
-    date: '2026-10-20',
-    capacity: 50,
-    registeredCount: 15,
+    date: '2026-10-20', capacity: 50, registeredCount: 15,
     description: 'Hands-on training for GitHub Actions OIDC deployment to AWS without static access keys.'
   }
 ];
 
+// ============================================================
+// SVG Icon Templates
+// ============================================================
+const ICONS = {
+  calendar: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>',
+  location: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"/><path d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"/></svg>',
+  id: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M7 20l4-16m2 16l4-16M6 9h14M4 15h14"/></svg>',
+  check: '<svg class="toast-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>',
+  error: '<svg class="toast-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><path d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>'
+};
+
+// ============================================================
+// Application Class
+// ============================================================
 class EventPulseApp {
   constructor() {
     this.apiUrl = normalizeApiUrl(localStorage.getItem(STORAGE_KEY_API_URL) || DEFAULT_API_URL);
     this.events = [];
+    this.allRegistrations = [];
     this.currentSearchEmail = '';
-    
+    this.currentSearchQuery = '';
+    this._pendingConfirm = null;
+
     this.initElements();
     this.bindEvents();
     this.initApp();
   }
 
+  // ----------------------------------------------------------
+  // DOM References
+  // ----------------------------------------------------------
   initElements() {
-    // Inputs & Badges
     this.apiUrlInput = document.getElementById('api-url-input');
     this.btnSaveApiUrl = document.getElementById('btn-save-api-url');
     this.apiStatusBadge = document.getElementById('api-status-badge');
     this.apiStatusText = document.getElementById('api-status-text');
 
-    // Navigation Tabs
     this.tabButtons = document.querySelectorAll('.tab-btn');
     this.tabContents = document.querySelectorAll('.tab-content');
 
-    // Events Grid
     this.btnRefreshEvents = document.getElementById('btn-refresh-events');
     this.eventsLoading = document.getElementById('events-loading');
     this.eventsGrid = document.getElementById('events-grid');
     this.eventsEmpty = document.getElementById('events-empty');
 
-    // Search & Registrations
     this.formSearchEmail = document.getElementById('form-search-email');
     this.searchEmailInput = document.getElementById('search-email-input');
     this.btnClearSearch = document.getElementById('btn-clear-search');
@@ -177,7 +181,6 @@ class EventPulseApp {
     this.regsList = document.getElementById('regs-list');
     this.regsEmpty = document.getElementById('regs-empty');
 
-    // Modal
     this.registerModal = document.getElementById('register-modal');
     this.modalEventTitle = document.getElementById('modal-event-title');
     this.modalEventBadge = document.getElementById('modal-event-badge');
@@ -187,40 +190,66 @@ class EventPulseApp {
     this.regEmailInput = document.getElementById('reg-email-input');
     this.btnCloseModal = document.getElementById('btn-close-modal');
     this.btnCancelModal = document.getElementById('btn-cancel-modal');
+
+    this.confirmDialog = document.getElementById('confirm-dialog');
+    this.confirmDialogMessage = document.getElementById('confirm-dialog-message');
+    this.btnConfirmYes = document.getElementById('confirm-dialog-confirm');
+    this.btnConfirmNo = document.getElementById('confirm-dialog-cancel');
+
+    this.tabRegCount = document.getElementById('tab-reg-count');
   }
 
+  // ----------------------------------------------------------
+  // Event Binding
+  // ----------------------------------------------------------
   bindEvents() {
-    // Save API URL
+    // API connect
     this.btnSaveApiUrl.addEventListener('click', () => {
       const url = normalizeApiUrl(this.apiUrlInput.value);
       this.setApiUrl(url);
       this.checkApiStatusAndFetch();
     });
 
-    // Tab Navigation
+    this.apiUrlInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        this.btnSaveApiUrl.click();
+      }
+    });
+
+    // Tab navigation
     this.tabButtons.forEach(btn => {
-      btn.addEventListener('click', (e) => {
+      btn.addEventListener('click', () => {
         const targetId = btn.getAttribute('data-tab');
         this.switchTab(targetId, btn);
       });
     });
 
-    // Refresh Events
-    this.btnRefreshEvents.addEventListener('click', () => {
-      this.fetchEvents();
-    });
+    // Refresh events
+    this.btnRefreshEvents.addEventListener('click', () => this.fetchEvents());
 
-    // Registration Form Submit
+    // Registration form
     this.formRegister.addEventListener('submit', (e) => {
       e.preventDefault();
       this.submitRegistration();
     });
 
-    // Modal Close
+    // Modal close
     this.btnCloseModal.addEventListener('click', () => this.closeModal());
     this.btnCancelModal.addEventListener('click', () => this.closeModal());
+    this.registerModal.addEventListener('click', (e) => {
+      if (e.target === this.registerModal) this.closeModal();
+    });
 
-    // Preset Quick-Connect Buttons
+    // Escape to close modals
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        if (!this.registerModal.classList.contains('hidden')) this.closeModal();
+        if (!this.confirmDialog.classList.contains('hidden')) this.closeConfirmDialog(false);
+      }
+    });
+
+    // Preset Quick-Connect buttons
     this.presetButtons = document.querySelectorAll('.btn-preset');
     this.presetButtons.forEach(btn => {
       btn.addEventListener('click', () => {
@@ -233,7 +262,7 @@ class EventPulseApp {
       });
     });
 
-    // Provider System Filters
+    // Provider filter buttons
     this.filterButtons = document.querySelectorAll('.btn-filter');
     this.filterButtons.forEach(btn => {
       btn.addEventListener('click', () => {
@@ -244,14 +273,13 @@ class EventPulseApp {
       });
     });
 
-    // Search Registrations Submit
+    // Search registrations
     this.formSearchEmail.addEventListener('submit', (e) => {
       e.preventDefault();
       const query = (this.searchEmailInput.value || '').trim();
       this.fetchRegistrations(query);
     });
 
-    // Clear Search Button
     if (this.btnClearSearch) {
       this.btnClearSearch.addEventListener('click', () => {
         this.searchEmailInput.value = '';
@@ -259,32 +287,47 @@ class EventPulseApp {
       });
     }
 
-    // Real-time instant search filtering as user types
+    // Real-time search filtering
     if (this.searchEmailInput) {
       this.searchEmailInput.addEventListener('input', () => {
         const query = (this.searchEmailInput.value || '').trim();
         this.filterAndRenderRegistrations(query);
       });
     }
+
+    // Confirmation dialog buttons
+    if (this.btnConfirmYes) {
+      this.btnConfirmYes.addEventListener('click', () => this.closeConfirmDialog(true));
+    }
+    if (this.btnConfirmNo) {
+      this.btnConfirmNo.addEventListener('click', () => this.closeConfirmDialog(false));
+    }
+    if (this.confirmDialog) {
+      this.confirmDialog.addEventListener('click', (e) => {
+        if (e.target === this.confirmDialog) this.closeConfirmDialog(false);
+      });
+    }
   }
 
+  // ----------------------------------------------------------
+  // Initialization
+  // ----------------------------------------------------------
   initApp() {
     if (this.apiUrl) {
       this.apiUrlInput.value = this.apiUrl;
       if (this.presetButtons) {
         this.presetButtons.forEach(btn => {
           const btnUrl = normalizeApiUrl(btn.getAttribute('data-url'));
-          if (btnUrl === this.apiUrl) {
-            btn.classList.add('active');
-          } else {
-            btn.classList.remove('active');
-          }
+          btn.classList.toggle('active', btnUrl === this.apiUrl);
         });
       }
     }
     this.checkApiStatusAndFetch();
   }
 
+  // ----------------------------------------------------------
+  // API URL Management
+  // ----------------------------------------------------------
   setApiUrl(url) {
     this.apiUrl = url;
     if (url) {
@@ -294,14 +337,21 @@ class EventPulseApp {
     }
   }
 
+  // ----------------------------------------------------------
+  // Tab Navigation
+  // ----------------------------------------------------------
   switchTab(targetSectionId, activeBtn) {
-    this.tabButtons.forEach(btn => btn.classList.remove('active'));
+    this.tabButtons.forEach(btn => {
+      btn.classList.remove('active');
+      btn.setAttribute('aria-selected', 'false');
+    });
     this.tabContents.forEach(content => {
       content.classList.remove('active');
       content.classList.add('hidden');
     });
 
     activeBtn.classList.add('active');
+    activeBtn.setAttribute('aria-selected', 'true');
     const targetSection = document.getElementById(targetSectionId);
     if (targetSection) {
       targetSection.classList.remove('hidden');
@@ -314,11 +364,14 @@ class EventPulseApp {
     }
   }
 
+  // ----------------------------------------------------------
+  // API Status Check
+  // ----------------------------------------------------------
   async checkApiStatusAndFetch() {
-    this.updateStatusBadge('connecting', 'Connecting...');
-    
+    this.updateStatusBadge('connecting', 'Connecting…');
+
     if (!this.apiUrl) {
-      this.updateStatusBadge('disconnected', 'Mock Mode (No API URL)');
+      this.updateStatusBadge('disconnected', 'Demo Mode');
       this.renderEvents(MOCK_EVENTS);
       return;
     }
@@ -326,14 +379,14 @@ class EventPulseApp {
     try {
       const response = await fetchWithCorsFallback(`${this.apiUrl}/events`, { method: 'GET' });
       if (response.ok) {
-        this.updateStatusBadge('connected', 'API Connected');
+        this.updateStatusBadge('connected', 'Connected');
         this.fetchEvents();
       } else {
         throw new Error(`HTTP ${response.status}`);
       }
     } catch (err) {
-      console.warn('API connection failed, falling back to mock mode:', err);
-      this.updateStatusBadge('disconnected', 'API Gateway Error (Showing Demo Data)');
+      console.warn('API connection failed:', err);
+      this.updateStatusBadge('disconnected', 'Connection Failed');
       this.renderEvents(MOCK_EVENTS);
     }
   }
@@ -343,6 +396,9 @@ class EventPulseApp {
     this.apiStatusText.textContent = text;
   }
 
+  // ----------------------------------------------------------
+  // Fetch & Normalize Events
+  // ----------------------------------------------------------
   async fetchEvents() {
     this.eventsLoading.classList.remove('hidden');
     this.eventsGrid.classList.add('hidden');
@@ -361,14 +417,13 @@ class EventPulseApp {
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = unwrapApiPayload(await res.json());
       const rawList = Array.isArray(data) ? data : (data.events || data.data || data.items || data.results || []);
-      
+
       this.events = rawList.map(item => {
         const id = String(item.eventId || item.event_id || item.id || item._id || '').trim();
         const name = String(item.eventName || item.name || item.title || 'Untitled Event').trim();
         const sourceId = String(item.sourceEventId || item.source_event_id || id).trim();
-        
         const capacity = Number(item.capacity ?? item.max_capacity ?? item.total_seats ?? item.totalSeats ?? item.seats ?? 100);
-        
+
         let apiRegCount = 0;
         if (item.registeredCount !== undefined || item.registered_count !== undefined || item.attendees !== undefined || item.attendeeCount !== undefined) {
           apiRegCount = Number(item.registeredCount ?? item.registered_count ?? item.attendees ?? item.attendeeCount ?? 0);
@@ -377,21 +432,15 @@ class EventPulseApp {
           apiRegCount = Math.max(capacity - avail, 0);
         }
 
-        // When connected to API Gateway, server apiRegCount is the authoritative source of truth.
-        // Only fallback to localCount when running in mock mode (no apiUrl).
         const localCount = !this.apiUrl ? getLocalRegistrationCount(id, sourceId) : 0;
         const totalRegCount = Math.max(apiRegCount, localCount);
-
         const locationStr = item.location || item.venue || item.address || item.place || '';
         const dateStr = item.date ? (item.time ? `${item.date} (${item.time})` : item.date) : 'TBD';
 
         return {
           ...item,
-          eventId: id,
-          event_id: id,
-          id: id,
-          eventName: name,
-          name: name,
+          eventId: id, event_id: id, id: id,
+          eventName: name, name: name,
           location: locationStr,
           date: dateStr,
           providerId: item.providerId || item.provider_id || '',
@@ -411,6 +460,9 @@ class EventPulseApp {
     }
   }
 
+  // ----------------------------------------------------------
+  // Filter Events by Provider
+  // ----------------------------------------------------------
   filterEventsByProvider(provider) {
     if (!this.events || this.events.length === 0) return;
     if (!provider || provider === 'all') {
@@ -427,11 +479,16 @@ class EventPulseApp {
     this.renderEvents(filtered);
   }
 
+  // ----------------------------------------------------------
+  // Render Events Grid
+  // ----------------------------------------------------------
   renderEvents(eventsList) {
     this.eventsGrid.innerHTML = '';
     this.eventsLoading.classList.add('hidden');
     this.updateCapacityStory(eventsList);
+
     if (!eventsList || eventsList.length === 0) {
+      this.eventsGrid.classList.add('hidden');
       this.eventsEmpty.classList.remove('hidden');
       return;
     }
@@ -449,40 +506,47 @@ class EventPulseApp {
       const capacity = Number(evt.capacity ?? evt.max_capacity ?? evt.total_seats ?? 100);
       const isFull = regCount >= capacity;
       const dateStr = evt.date || 'TBD';
+      const locationStr = evt.location || '';
 
+      // Capacity bar
+      const pct = capacity > 0 ? Math.min((regCount / capacity) * 100, 100) : 0;
+      const capClass = pct >= 90 ? 'cap-high' : pct >= 60 ? 'cap-mid' : 'cap-low';
+
+      // Provider badge
       const providerId = String(evt.providerId || evt.provider_id || '').toLowerCase();
-      let providerBadgeHtml = '<span class="badge badge-provider-local">My Local Hub</span>';
+      let providerBadge = '<span class="badge badge-provider-local">Local</span>';
       if (providerId.includes('gloria')) {
-        providerBadgeHtml = '<span class="badge badge-provider-gloria">Gloria System (us-east-1)</span>';
+        providerBadge = '<span class="badge badge-provider-gloria">Gloria</span>';
       } else if (providerId.includes('accra') || providerId.includes('dawuni')) {
-        providerBadgeHtml = '<span class="badge badge-provider-dawuni">Dawuni System (us-east-1)</span>';
+        providerBadge = '<span class="badge badge-provider-dawuni">Dawuni</span>';
       }
+
+      // Description
+      const desc = evt.description || evt.summary || (locationStr ? `Location: ${locationStr}` : 'No description available.');
 
       card.innerHTML = `
         <div>
           <div class="event-card-header">
             <h3 class="event-card-title">${this.escapeHtml(eventName)}</h3>
-            <div style="display:flex; gap:6px; align-items:center;">
-              ${providerBadgeHtml}
-              <span class="badge ${isFull ? '' : 'badge-success'}">${isFull ? 'Full' : 'Open'}</span>
+            <div class="event-card-badges">
+              ${providerBadge}
+              <span class="badge ${isFull ? 'badge-danger' : 'badge-success'}">${isFull ? 'Full' : 'Open'}</span>
             </div>
           </div>
-          <p class="event-card-desc">${this.escapeHtml(evt.description || evt.summary || (evt.location ? `Location: ${evt.location}` : (evt.status ? `Status: ${evt.status}` : 'No description available.')))}</p>
+          <p class="event-card-desc">${this.escapeHtml(desc)}</p>
           <div class="event-card-meta">
-            <div class="meta-item">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
-              <span>Date: ${dateStr}</span>
-            </div>
-            <div class="meta-item">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 5v2m0 4v2m0 4v2M5 5a2 2 0 00-2 2v3a2 2 0 002 2h14a2 2 0 002-2V7a2 2 0 00-2-2H5z"/></svg>
-              <span>Event ID: ${eventId}</span>
-            </div>
+            <div class="meta-item">${ICONS.calendar}<span>${dateStr}</span></div>
+            ${locationStr ? `<div class="meta-item">${ICONS.location}<span>${this.escapeHtml(locationStr)}</span></div>` : ''}
+            <div class="meta-item">${ICONS.id}<span>${eventId}</span></div>
+          </div>
+          <div class="capacity-bar-track" aria-label="Capacity: ${regCount} of ${capacity}">
+            <div class="capacity-bar-fill ${capClass}" style="width: ${pct}%"></div>
           </div>
         </div>
         <div class="event-card-footer">
-          <span class="capacity-info">${isFull ? 'Every seat claimed' : `${capacity - regCount} seats left`}</span>
+          <span class="capacity-info">${isFull ? 'Fully booked' : `${capacity - regCount} of ${capacity} seats left`}</span>
           <button class="btn btn-primary btn-register-trigger" ${isFull ? 'disabled' : ''}>
-            ${isFull ? 'Sold Out' : 'Register Now'}
+            ${isFull ? 'Sold Out' : 'Register'}
           </button>
         </div>
       `;
@@ -496,6 +560,9 @@ class EventPulseApp {
     });
   }
 
+  // ----------------------------------------------------------
+  // Update Capacity Stats
+  // ----------------------------------------------------------
   updateCapacityStory(eventsList) {
     const events = Array.isArray(eventsList) ? eventsList : [];
     const totalCapacity = events.reduce((sum, event) => sum + Number(event.capacity || 100), 0);
@@ -513,6 +580,9 @@ class EventPulseApp {
     document.getElementById('capacity-message').textContent = message;
   }
 
+  // ----------------------------------------------------------
+  // Registration Modal
+  // ----------------------------------------------------------
   openRegisterModal(evt) {
     const eventId = String(evt.eventId || evt.event_id || evt.id || evt._id || '').trim();
     const name = String(evt.eventName || evt.name || evt.title || 'Event Registration').trim();
@@ -522,15 +592,56 @@ class EventPulseApp {
     this.modalEventBadge.textContent = `Event ID: ${eventId || 'N/A'}`;
     this.modalEventId.value = eventId;
     this.regNameInput.value = '';
-    this.regEmailInput.value = '';
-    
+
+    // Pre-fill email from last registration
+    const lastEmail = localStorage.getItem(STORAGE_KEY_LAST_EMAIL) || '';
+    this.regEmailInput.value = lastEmail;
+
     this.registerModal.classList.remove('hidden');
+    document.body.classList.add('modal-open');
+
+    // Focus first empty input
+    setTimeout(() => {
+      if (this.regNameInput.value === '') {
+        this.regNameInput.focus();
+      } else if (this.regEmailInput.value === '') {
+        this.regEmailInput.focus();
+      } else {
+        this.regNameInput.focus();
+      }
+    }, 100);
   }
 
   closeModal() {
     this.registerModal.classList.add('hidden');
+    document.body.classList.remove('modal-open');
   }
 
+  // ----------------------------------------------------------
+  // Confirmation Dialog
+  // ----------------------------------------------------------
+  showConfirmDialog(message) {
+    return new Promise((resolve) => {
+      this.confirmDialogMessage.textContent = message;
+      this.confirmDialog.classList.remove('hidden');
+      document.body.classList.add('modal-open');
+      this._pendingConfirm = resolve;
+      this.btnConfirmYes.focus();
+    });
+  }
+
+  closeConfirmDialog(confirmed) {
+    this.confirmDialog.classList.add('hidden');
+    document.body.classList.remove('modal-open');
+    if (this._pendingConfirm) {
+      this._pendingConfirm(confirmed);
+      this._pendingConfirm = null;
+    }
+  }
+
+  // ----------------------------------------------------------
+  // Submit Registration
+  // ----------------------------------------------------------
   async submitRegistration() {
     const eventId = this.modalEventId.value;
     const name = this.regNameInput.value.trim();
@@ -541,7 +652,6 @@ class EventPulseApp {
     this.closeModal();
 
     if (!this.apiUrl) {
-      // Mock Success Response
       this.showToast(`Registered successfully for ${eventId}! (Demo Mode)`, 'success');
       return;
     }
@@ -551,13 +661,10 @@ class EventPulseApp {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          eventId,
-          event_id: eventId,
-          id: eventId,
+          eventId, event_id: eventId, id: eventId,
           providerId: this.selectedProviderId || undefined,
           sourceEventId: this.selectedSourceEventId || undefined,
-          name,
-          email
+          name, email
         })
       });
 
@@ -567,29 +674,28 @@ class EventPulseApp {
         const regId = registration.registrationId || registration.registration_id || registration.id || result.registration_id || result.registrationId || 'OK';
 
         saveLocalRegistration({
-          registrationId: regId,
-          eventId: eventId,
-          event_id: eventId,
+          registrationId: regId, eventId, event_id: eventId,
           sourceEventId: this.selectedSourceEventId || eventId,
-          email: email,
-          name: name,
-          createdAt: new Date().toISOString()
+          email, name, createdAt: new Date().toISOString()
         });
 
         localStorage.setItem(STORAGE_KEY_LAST_EMAIL, email);
         this.currentSearchEmail = email;
         this.searchEmailInput.value = email;
-        this.showToast(`Registration Successful! Reg ID: ${regId}`, 'success');
-        this.fetchEvents(); // refresh counts
+        this.showToast(`Registration confirmed! ID: ${regId}`, 'success');
+        this.fetchEvents();
       } else {
         this.showToast(result.error || result.message || 'Registration failed', 'error');
       }
     } catch (err) {
       console.error('Registration error:', err);
-      this.showToast('Error connecting to API Gateway endpoint', 'error');
+      this.showToast('Error connecting to API Gateway', 'error');
     }
   }
 
+  // ----------------------------------------------------------
+  // Fetch Registrations
+  // ----------------------------------------------------------
   async fetchRegistrations(query = '') {
     this.currentSearchQuery = String(query || '').trim();
     this.regsLoading.classList.remove('hidden');
@@ -600,20 +706,8 @@ class EventPulseApp {
       setTimeout(() => {
         this.regsLoading.classList.add('hidden');
         const mockRegs = [
-          {
-            registrationId: 'reg-demo-99',
-            eventId: 'evt-101',
-            name: 'Alex Johnson',
-            email: 'alex@example.com',
-            timestamp: new Date().toISOString()
-          },
-          {
-            registrationId: 'reg-demo-100',
-            eventId: 'evt-102',
-            name: 'Sarah Connor',
-            email: 'sarah@example.com',
-            timestamp: new Date().toISOString()
-          }
+          { registrationId: 'reg-demo-99', eventId: 'evt-101', name: 'Alex Johnson', email: 'alex@example.com', timestamp: new Date().toISOString() },
+          { registrationId: 'reg-demo-100', eventId: 'evt-102', name: 'Sarah Connor', email: 'sarah@example.com', timestamp: new Date().toISOString() }
         ];
         this.allRegistrations = mockRegs;
         this.filterAndRenderRegistrations(this.currentSearchQuery);
@@ -625,7 +719,6 @@ class EventPulseApp {
       let remoteRegs = [];
       let parentEmail = '';
 
-      // Fetch all registrations from API Gateway endpoint
       try {
         const resAll = await fetchWithCorsFallback(`${this.apiUrl}/registrations/all`);
         if (resAll.ok) {
@@ -637,7 +730,6 @@ class EventPulseApp {
         console.warn('Could not fetch /registrations/all:', e);
       }
 
-      // If specific email is searched and not present in remote list, perform targeted lookup
       if (this.currentSearchQuery && this.currentSearchQuery.includes('@')) {
         try {
           const resDirect = await fetchWithCorsFallback(`${this.apiUrl}/registrations/${encodeURIComponent(this.currentSearchQuery)}`);
@@ -645,7 +737,6 @@ class EventPulseApp {
             const dataDirect = unwrapApiPayload(await resDirect.json());
             const directItems = Array.isArray(dataDirect) ? dataDirect : (dataDirect.registrations || dataDirect.data || dataDirect.items || dataDirect.results || []);
             const directEmail = (dataDirect && dataDirect.email) || this.currentSearchQuery;
-            
             directItems.forEach(item => {
               const itemEmail = item.email || directEmail;
               remoteRegs.push({ ...item, email: itemEmail });
@@ -656,7 +747,6 @@ class EventPulseApp {
         }
       }
 
-      // When connected to API Gateway, server remoteRegs is the authoritative source of truth
       let combinedList = [];
       if (this.apiUrl && remoteRegs.length > 0) {
         combinedList = remoteRegs;
@@ -678,12 +768,15 @@ class EventPulseApp {
       this.filterAndRenderRegistrations(this.currentSearchQuery, parentEmail);
     } catch (err) {
       console.error('Error fetching registrations:', err);
-      this.showToast('Error querying registrations endpoint', 'error');
+      this.showToast('Error querying registrations', 'error');
     } finally {
       this.regsLoading.classList.add('hidden');
     }
   }
 
+  // ----------------------------------------------------------
+  // Filter & Render Registrations
+  // ----------------------------------------------------------
   filterAndRenderRegistrations(query, defaultEmail = '') {
     const q = String(query || '').trim().toLowerCase();
     let list = this.allRegistrations || [];
@@ -695,7 +788,6 @@ class EventPulseApp {
         const eventName = String(reg.eventName || '').toLowerCase();
         const regId = String(reg.registrationId || reg.registration_id || reg.id || '').toLowerCase();
         const evtId = String(reg.eventId || reg.event_id || reg.sourceEventId || '').toLowerCase();
-
         return email.includes(q) || name.includes(q) || eventName.includes(q) || regId.includes(q) || evtId.includes(q);
       });
     }
@@ -703,21 +795,25 @@ class EventPulseApp {
     this.renderRegistrations(list, defaultEmail);
   }
 
+  // ----------------------------------------------------------
+  // Render Registration List
+  // ----------------------------------------------------------
   renderRegistrations(regsList, defaultEmail = '') {
     this.regsList.innerHTML = '';
+
     if (!regsList || regsList.length === 0) {
+      this.regsList.classList.add('hidden');
       this.regsEmpty.classList.remove('hidden');
+      this.updateRegCount(0);
       return;
     }
 
-    // Deduplicate items by registrationId and providerRegistrationId
+    // Deduplicate
     const seenIds = new Set();
     const uniqueList = [];
-
     regsList.forEach(reg => {
       const regId = String(reg.registrationId || reg.registration_id || reg.id || reg._id || '').trim();
       const providerRegId = String(reg.providerRegistrationId || reg.provider_registration_id || '').trim();
-
       const isSeen = (regId && seenIds.has(regId)) || (providerRegId && seenIds.has(providerRegId));
       if (!isSeen) {
         if (regId) seenIds.add(regId);
@@ -727,12 +823,21 @@ class EventPulseApp {
     });
 
     if (uniqueList.length === 0) {
+      this.regsList.classList.add('hidden');
       this.regsEmpty.classList.remove('hidden');
+      this.updateRegCount(0);
       return;
     }
 
     this.regsEmpty.classList.add('hidden');
     this.regsList.classList.remove('hidden');
+    this.updateRegCount(uniqueList.length);
+
+    // Count header
+    const countEl = document.createElement('div');
+    countEl.className = 'regs-count';
+    countEl.textContent = `${uniqueList.length} registration${uniqueList.length !== 1 ? 's' : ''} found`;
+    this.regsList.appendChild(countEl);
 
     uniqueList.forEach(reg => {
       const item = document.createElement('div');
@@ -740,34 +845,42 @@ class EventPulseApp {
 
       const regId = reg.registrationId || reg.registration_id || reg.id || reg._id || 'N/A';
       const eventId = String(reg.eventId || reg.event_id || reg.sourceEventId || 'N/A').trim();
-      
-      const foundEvt = this.events.find(e => 
-        String(e.eventId) === eventId || 
-        String(e.event_id) === eventId || 
-        String(e.sourceEventId) === eventId || 
+
+      const foundEvt = this.events.find(e =>
+        String(e.eventId) === eventId ||
+        String(e.event_id) === eventId ||
+        String(e.sourceEventId) === eventId ||
         String(e.id) === eventId
       );
-      const eventName = reg.eventName || (foundEvt ? (foundEvt.eventName || foundEvt.name) : null) || `Event ID: ${eventId}`;
-
+      const eventName = reg.eventName || (foundEvt ? (foundEvt.eventName || foundEvt.name) : null) || `Event: ${eventId}`;
       const email = reg.email || defaultEmail || this.currentSearchEmail || 'N/A';
       const nameStr = reg.name ? String(reg.name).trim() : '';
+
+      // Avatar initials
+      const initials = nameStr
+        ? nameStr.split(' ').map(w => w[0]).join('').substring(0, 2).toUpperCase()
+        : email[0].toUpperCase();
+
       const participantInfo = nameStr && nameStr.toLowerCase() !== 'participant'
-        ? `<strong>${this.escapeHtml(nameStr)}</strong> (${this.escapeHtml(email)})` 
+        ? `<strong>${this.escapeHtml(nameStr)}</strong> · ${this.escapeHtml(email)}`
         : `<strong>${this.escapeHtml(email)}</strong>`;
 
       const dateVal = reg.createdAt || reg.registered_at || reg.timestamp;
 
       item.innerHTML = `
-        <div class="reg-info">
-          <h4>${this.escapeHtml(eventName)}</h4>
-          <div class="reg-meta">
-            <span>Participant: ${participantInfo}</span>
-            <span>Registration ID: <code>${this.escapeHtml(regId)}</code></span>
-            ${dateVal ? `<span>Date: ${new Date(dateVal).toLocaleDateString()}</span>` : ''}
+        <div class="reg-item-content">
+          <div class="reg-avatar" aria-hidden="true">${initials}</div>
+          <div class="reg-info">
+            <h4>${this.escapeHtml(eventName)}</h4>
+            <div class="reg-meta">
+              <span>${participantInfo}</span>
+              <span>ID: <code>${this.escapeHtml(regId)}</code></span>
+              ${dateVal ? `<span>${new Date(dateVal).toLocaleDateString()}</span>` : ''}
+            </div>
           </div>
         </div>
         <button class="btn btn-danger btn-cancel-reg" data-reg-id="${this.escapeHtml(regId)}">
-          Cancel Registration
+          Cancel
         </button>
       `;
 
@@ -780,10 +893,20 @@ class EventPulseApp {
     });
   }
 
-  async cancelRegistration(registrationId) {
-    if (!confirm(`Are you sure you want to cancel registration ${registrationId}?`)) {
-      return;
+  updateRegCount(count) {
+    if (this.tabRegCount) {
+      this.tabRegCount.textContent = count > 0 ? count : '';
     }
+  }
+
+  // ----------------------------------------------------------
+  // Cancel Registration
+  // ----------------------------------------------------------
+  async cancelRegistration(registrationId) {
+    const confirmed = await this.showConfirmDialog(
+      `Cancel registration ${registrationId}? This action cannot be undone.`
+    );
+    if (!confirmed) return;
 
     if (!this.apiUrl) {
       removeLocalRegistration(registrationId);
@@ -794,42 +917,48 @@ class EventPulseApp {
 
     try {
       const encodedId = encodeURIComponent(registrationId);
-      const res = await fetch(`${this.apiUrl}/registration/${encodedId}`, {
-        method: 'DELETE'
-      });
+      const res = await fetch(`${this.apiUrl}/registration/${encodedId}`, { method: 'DELETE' });
 
       if (res.ok) {
         removeLocalRegistration(registrationId);
-        this.showToast('Registration cancelled successfully!', 'success');
+        this.showToast('Registration cancelled successfully', 'success');
         this.fetchEvents();
         this.fetchRegistrations(this.currentSearchEmail);
       } else {
         const errData = unwrapApiPayload(await res.json());
-        this.showToast(errData.error || errData.message || 'Failed to cancel registration', 'error');
+        this.showToast(errData.error || errData.message || 'Failed to cancel', 'error');
       }
     } catch (err) {
       console.error('Cancel error:', err);
-      this.showToast('Error sending DELETE request to API Gateway', 'error');
+      this.showToast('Error sending DELETE request', 'error');
     }
   }
 
+  // ----------------------------------------------------------
+  // Toast Notifications
+  // ----------------------------------------------------------
   showToast(message, type = 'success') {
     const container = document.getElementById('toast-container');
     if (!container) return;
 
     const toast = document.createElement('div');
     toast.className = `toast toast-${type}`;
-    toast.textContent = message;
+
+    const icon = type === 'success' ? ICONS.check : ICONS.error;
+    toast.innerHTML = `${icon}<span>${this.escapeHtml(message)}</span>`;
 
     container.appendChild(toast);
 
     setTimeout(() => {
       toast.style.opacity = '0';
-      toast.style.transform = 'translateX(100%)';
-      setTimeout(() => toast.remove(), 300);
+      toast.style.transform = 'translateY(12px) scale(0.96)';
+      setTimeout(() => toast.remove(), 250);
     }, 4000);
   }
 
+  // ----------------------------------------------------------
+  // Utilities
+  // ----------------------------------------------------------
   escapeHtml(str) {
     return String(str)
       .replace(/&/g, '&amp;')
@@ -840,7 +969,9 @@ class EventPulseApp {
   }
 }
 
-// Initialize Application when DOM ready
+// ============================================================
+// Initialize
+// ============================================================
 document.addEventListener('DOMContentLoaded', () => {
   window.app = new EventPulseApp();
 });
