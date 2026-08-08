@@ -123,6 +123,7 @@ class EventPulseApp {
     // Search & Registrations
     this.formSearchEmail = document.getElementById('form-search-email');
     this.searchEmailInput = document.getElementById('search-email-input');
+    this.btnClearSearch = document.getElementById('btn-clear-search');
     this.regsLoading = document.getElementById('regs-loading');
     this.regsList = document.getElementById('regs-list');
     this.regsEmpty = document.getElementById('regs-empty');
@@ -170,12 +171,28 @@ class EventPulseApp {
     this.btnCloseModal.addEventListener('click', () => this.closeModal());
     this.btnCancelModal.addEventListener('click', () => this.closeModal());
 
-    // Search Registrations
+    // Search Registrations Submit
     this.formSearchEmail.addEventListener('submit', (e) => {
       e.preventDefault();
-      const email = this.searchEmailInput.value.trim() || 'all';
-      this.fetchRegistrations(email);
+      const query = (this.searchEmailInput.value || '').trim();
+      this.fetchRegistrations(query);
     });
+
+    // Clear Search Button
+    if (this.btnClearSearch) {
+      this.btnClearSearch.addEventListener('click', () => {
+        this.searchEmailInput.value = '';
+        this.fetchRegistrations('');
+      });
+    }
+
+    // Real-time instant search filtering as user types
+    if (this.searchEmailInput) {
+      this.searchEmailInput.addEventListener('input', () => {
+        const query = (this.searchEmailInput.value || '').trim();
+        this.filterAndRenderRegistrations(query);
+      });
+    }
   }
 
   initApp() {
@@ -209,9 +226,8 @@ class EventPulseApp {
     }
 
     if (targetSectionId === 'section-my-registrations') {
-      const email = (this.searchEmailInput.value || localStorage.getItem(STORAGE_KEY_LAST_EMAIL) || '').trim() || 'all';
-      if (email !== 'all') this.searchEmailInput.value = email;
-      this.fetchRegistrations(email);
+      const query = (this.searchEmailInput.value || '').trim();
+      this.fetchRegistrations(query);
     }
   }
 
@@ -447,8 +463,8 @@ class EventPulseApp {
     }
   }
 
-  async fetchRegistrations(email) {
-    this.currentSearchEmail = email;
+  async fetchRegistrations(query = '') {
+    this.currentSearchQuery = String(query || '').trim();
     this.regsLoading.classList.remove('hidden');
     this.regsList.classList.add('hidden');
     this.regsEmpty.classList.add('hidden');
@@ -460,41 +476,100 @@ class EventPulseApp {
           {
             registrationId: 'reg-demo-99',
             eventId: 'evt-101',
-            name: 'Demo User',
-            email: email,
+            name: 'Alex Johnson',
+            email: 'alex@example.com',
+            timestamp: new Date().toISOString()
+          },
+          {
+            registrationId: 'reg-demo-100',
+            eventId: 'evt-102',
+            name: 'Sarah Connor',
+            email: 'sarah@example.com',
             timestamp: new Date().toISOString()
           }
         ];
-        this.renderRegistrations(mockRegs, email);
-      }, 400);
+        this.allRegistrations = mockRegs;
+        this.filterAndRenderRegistrations(this.currentSearchQuery);
+      }, 300);
       return;
     }
 
     try {
-      const res = await fetch(`${this.apiUrl}/registrations/${encodeURIComponent(email)}`);
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data = unwrapApiPayload(await res.json());
-      const remoteRegs = Array.isArray(data) ? data : (data.registrations || data.data || data.items || data.results || []);
-      const parentEmail = (data && data.email) || email;
+      let remoteRegs = [];
+      let parentEmail = '';
 
-      const localRegs = getLocalRegistrations().filter(r => String(r.email || '').toLowerCase() === String(email || '').toLowerCase());
-      
+      // Fetch all registrations from API Gateway endpoint
+      try {
+        const resAll = await fetch(`${this.apiUrl}/registrations/all`);
+        if (resAll.ok) {
+          const dataAll = unwrapApiPayload(await resAll.json());
+          remoteRegs = Array.isArray(dataAll) ? dataAll : (dataAll.registrations || dataAll.data || dataAll.items || dataAll.results || []);
+          if (dataAll && dataAll.email) parentEmail = dataAll.email;
+        }
+      } catch (e) {
+        console.warn('Could not fetch /registrations/all:', e);
+      }
+
+      // If specific email is searched and not present in remote list, perform targeted lookup
+      if (this.currentSearchQuery && this.currentSearchQuery.includes('@')) {
+        try {
+          const resDirect = await fetch(`${this.apiUrl}/registrations/${encodeURIComponent(this.currentSearchQuery)}`);
+          if (resDirect.ok) {
+            const dataDirect = unwrapApiPayload(await resDirect.json());
+            const directItems = Array.isArray(dataDirect) ? dataDirect : (dataDirect.registrations || dataDirect.data || dataDirect.items || dataDirect.results || []);
+            const directEmail = (dataDirect && dataDirect.email) || this.currentSearchQuery;
+            
+            directItems.forEach(item => {
+              const itemEmail = item.email || directEmail;
+              remoteRegs.push({ ...item, email: itemEmail });
+            });
+          }
+        } catch (e) {
+          console.warn('Direct query failed:', e);
+        }
+      }
+
+      const localRegs = getLocalRegistrations();
+
       // Deduplicate remote and local registrations by registrationId
-      const combined = [...remoteRegs];
-      const remoteIds = new Set(remoteRegs.map(r => r.registrationId || r.registration_id || r.id));
-      localRegs.forEach(lr => {
-        if (!remoteIds.has(lr.registrationId)) {
-          combined.push(lr);
+      const combinedMap = new Map();
+      
+      [...remoteRegs, ...localRegs].forEach(item => {
+        const id = String(item.registrationId || item.registration_id || item.id || '').trim();
+        if (id && !combinedMap.has(id)) {
+          combinedMap.set(id, item);
+        } else if (!id) {
+          combinedMap.set(Math.random().toString(), item);
         }
       });
 
-      this.renderRegistrations(combined, parentEmail);
+      this.allRegistrations = Array.from(combinedMap.values());
+      this.filterAndRenderRegistrations(this.currentSearchQuery, parentEmail);
     } catch (err) {
       console.error('Error fetching registrations:', err);
       this.showToast('Error querying registrations endpoint', 'error');
     } finally {
       this.regsLoading.classList.add('hidden');
     }
+  }
+
+  filterAndRenderRegistrations(query, defaultEmail = '') {
+    const q = String(query || '').trim().toLowerCase();
+    let list = this.allRegistrations || [];
+
+    if (q && q !== 'all') {
+      list = list.filter(reg => {
+        const email = String(reg.email || defaultEmail || '').toLowerCase();
+        const name = String(reg.name || '').toLowerCase();
+        const eventName = String(reg.eventName || '').toLowerCase();
+        const regId = String(reg.registrationId || reg.registration_id || reg.id || '').toLowerCase();
+        const evtId = String(reg.eventId || reg.event_id || reg.sourceEventId || '').toLowerCase();
+
+        return email.includes(q) || name.includes(q) || eventName.includes(q) || regId.includes(q) || evtId.includes(q);
+      });
+    }
+
+    this.renderRegistrations(list, defaultEmail);
   }
 
   renderRegistrations(regsList, defaultEmail = '') {
