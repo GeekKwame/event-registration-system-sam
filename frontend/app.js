@@ -283,9 +283,22 @@ class EventPulseApp {
         const id = String(item.eventId || item.event_id || item.id || item._id || '').trim();
         const name = String(item.eventName || item.name || item.title || 'Untitled Event').trim();
         const sourceId = String(item.sourceEventId || item.source_event_id || id).trim();
-        const apiRegCount = Number(item.registeredCount ?? item.registered_count ?? item.attendees ?? item.attendeeCount ?? 0);
+        
+        const capacity = Number(item.capacity ?? item.max_capacity ?? item.total_seats ?? item.totalSeats ?? item.seats ?? 100);
+        
+        let apiRegCount = 0;
+        if (item.registeredCount !== undefined || item.registered_count !== undefined || item.attendees !== undefined || item.attendeeCount !== undefined) {
+          apiRegCount = Number(item.registeredCount ?? item.registered_count ?? item.attendees ?? item.attendeeCount ?? 0);
+        } else if (item.availableSeats !== undefined || item.available_seats !== undefined) {
+          const avail = Number(item.availableSeats ?? item.available_seats ?? capacity);
+          apiRegCount = Math.max(capacity - avail, 0);
+        }
+
         const localCount = getLocalRegistrationCount(id, sourceId);
         const totalRegCount = Math.max(apiRegCount, localCount);
+
+        const locationStr = item.location || item.venue || item.address || item.place || '';
+        const dateStr = item.date ? (item.time ? `${item.date} (${item.time})` : item.date) : 'TBD';
 
         return {
           ...item,
@@ -294,9 +307,11 @@ class EventPulseApp {
           id: id,
           eventName: name,
           name: name,
+          location: locationStr,
+          date: dateStr,
           providerId: item.providerId || item.provider_id || '',
           sourceEventId: sourceId,
-          capacity: Number(item.capacity ?? item.max_capacity ?? item.total_seats ?? 100),
+          capacity: capacity,
           registeredCount: totalRegCount
         };
       });
