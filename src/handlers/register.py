@@ -76,6 +76,21 @@ def handler(event, context):
         if remote_registration_id:
             item["providerRegistrationId"] = str(remote_registration_id)
         dynamodb.Table(REGISTRATIONS_TABLE).put_item(Item=item)
+
+        if SNS_TOPIC_ARN:
+            try:
+                sns.publish(
+                    TopicArn=SNS_TOPIC_ARN,
+                    Subject="Event Registration Confirmed",
+                    Message=(
+                        f"Hi {name or 'there'},\n\n"
+                        f"You're registered for provider event {event_id}.\n"
+                        f"Registration ID: {registration_id}\n"
+                    ),
+                )
+            except Exception:
+                pass
+
         return build_response(201, {
             "message": "Registration successful",
             "registration": item,
