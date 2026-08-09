@@ -354,7 +354,7 @@ class EventPulseApp {
   }
 
   // ----------------------------------------------------------
-  // API Status Check
+  // API Status Check + Initial Fetch (single network round-trip)
   // ----------------------------------------------------------
   async checkApiStatusAndFetch() {
     this.updateStatusBadge('connecting', 'Connecting…');
@@ -365,19 +365,10 @@ class EventPulseApp {
       return;
     }
 
-    try {
-      const response = await fetchWithCorsFallback(`${this.apiUrl}/events`, { method: 'GET' });
-      if (response.ok) {
-        this.updateStatusBadge('connected', 'Connected');
-        this.fetchEvents();
-      } else {
-        throw new Error(`HTTP ${response.status}`);
-      }
-    } catch (err) {
-      console.warn('API connection failed:', err);
-      this.updateStatusBadge('disconnected', 'Connection Failed');
-      this.renderEvents(MOCK_EVENTS);
-    }
+    // fetchEvents() itself talks to the API and now owns setting the
+    // connected/disconnected badge based on the real outcome, so we no
+    // longer make a separate throwaway request here before it.
+    await this.fetchEvents();
   }
 
   updateStatusBadge(state, text) {
@@ -421,7 +412,13 @@ class EventPulseApp {
           apiRegCount = Math.max(capacity - avail, 0);
         }
 
-        const localCount = !this.apiUrl ? getLocalRegistrationCount(id, sourceId) : 0;
+        // Always factor in locally-tracked registrations (not just in the
+        // no-API/demo path). This covers the gap right after a user
+        // registers, where the API's own count may not have caught up
+        // yet (eventual consistency) but we already know about the seat
+        // locally — without this, a just-registered seat could silently
+        // "reappear" as available until the backend refreshes.
+        const localCount = getLocalRegistrationCount(id, sourceId);
         const totalRegCount = Math.max(apiRegCount, localCount);
         const locationStr = item.location || item.venue || item.address || item.place || '';
         const dateStr = item.date ? (item.time ? `${item.date} (${item.time})` : item.date) : 'TBD';
@@ -439,9 +436,11 @@ class EventPulseApp {
         };
       });
 
+      this.updateStatusBadge('connected', 'Connected');
       this.renderEvents(this.events);
     } catch (err) {
       console.error('Error fetching events:', err);
+      this.updateStatusBadge('disconnected', 'Connection Failed');
       this.showToast('Failed to load events from API Gateway', 'error');
       this.renderEvents(MOCK_EVENTS);
     } finally {
@@ -622,12 +621,27 @@ class EventPulseApp {
     this.closeModal();
 
     if (!this.apiUrl) {
+      const demoRegId = `reg-demo-${Date.now()}`;
+      saveLocalRegistration({
+        registrationId: demoRegId, eventId, event_id: eventId,
+        sourceEventId: this.selectedSourceEventId || eventId,
+        email, name, createdAt: new Date().toISOString()
+      });
+      localStorage.setItem(STORAGE_KEY_LAST_EMAIL, email);
+      this.currentSearchEmail = email;
+      this.searchEmailInput.value = email;
       this.showToast(`Registered successfully for ${eventId}! (Demo Mode)`, 'success');
+      this.fetchEvents();
       return;
     }
 
     try {
-      const response = await fetch(`${this.apiUrl}/register`, {
+      // Use the resilient fetch helper here too — previously this call
+      // used a plain fetch() while every other API call went through
+      // fetchWithCorsFallback, so registrations would fail outright on
+      // API Gateways that don't have CORS configured, even though the
+      // rest of the app could route around it via the proxy fallbacks.
+      const response = await fetchWithCorsFallback(`${this.apiUrl}/register`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -679,7 +693,17 @@ class EventPulseApp {
           { registrationId: 'reg-demo-99', eventId: 'evt-101', name: 'Alex Johnson', email: 'alex@example.com', timestamp: new Date().toISOString() },
           { registrationId: 'reg-demo-100', eventId: 'evt-102', name: 'Sarah Connor', email: 'sarah@example.com', timestamp: new Date().toISOString() }
         ];
-        this.allRegistrations = mockRegs;
+        // Merge in whatever the user has actually registered for locally
+        // in this session — otherwise demo-mode sign-ups vanished from
+        // "My Registrations" the moment you switched tabs.
+        const localRegs = getLocalRegistrations();
+        const seen = new Set();
+        this.allRegistrations = [...localRegs, ...mockRegs].filter(r => {
+          const id = r.registrationId || r.registration_id || r.id;
+          if (id && seen.has(id)) return false;
+          if (id) seen.add(id);
+          return true;
+        });
         this.filterAndRenderRegistrations(this.currentSearchQuery);
       }, 300);
       return;
@@ -717,22 +741,22 @@ class EventPulseApp {
         }
       }
 
-      let combinedList = [];
-      if (this.apiUrl && remoteRegs.length > 0) {
-        combinedList = remoteRegs;
-      } else {
-        const localRegs = getLocalRegistrations();
-        const combinedMap = new Map();
-        [...remoteRegs, ...localRegs].forEach(item => {
-          const id = String(item.registrationId || item.registration_id || item.id || '').trim();
-          if (id && !combinedMap.has(id)) {
-            combinedMap.set(id, item);
-          } else if (!id) {
-            combinedMap.set(Math.random().toString(), item);
-          }
-        });
-        combinedList = Array.from(combinedMap.values());
-      }
+      // Always merge remote results with anything tracked locally, instead
+      // of only falling back to local storage when the API returned zero
+      // rows. Previously, as soon as the API returned *any* registrations,
+      // local-only entries (e.g. a registration just submitted, before the
+      // backend index caught up) were silently dropped from the list.
+      const localRegs = getLocalRegistrations();
+      const combinedMap = new Map();
+      [...remoteRegs, ...localRegs].forEach(item => {
+        const id = String(item.registrationId || item.registration_id || item.id || '').trim();
+        if (id && !combinedMap.has(id)) {
+          combinedMap.set(id, item);
+        } else if (!id) {
+          combinedMap.set(Math.random().toString(), item);
+        }
+      });
+      const combinedList = Array.from(combinedMap.values());
 
       this.allRegistrations = combinedList;
       this.filterAndRenderRegistrations(this.currentSearchQuery, parentEmail);
@@ -887,7 +911,11 @@ class EventPulseApp {
 
     try {
       const encodedId = encodeURIComponent(registrationId);
-      const res = await fetch(`${this.apiUrl}/registration/${encodedId}`, { method: 'DELETE' });
+      // Same fix as submitRegistration(): route DELETE through the
+      // CORS-fallback helper instead of a bare fetch(), so cancellation
+      // isn't the one action in the app that breaks on APIs without
+      // permissive CORS headers.
+      const res = await fetchWithCorsFallback(`${this.apiUrl}/registration/${encodedId}`, { method: 'DELETE' });
 
       if (res.ok) {
         removeLocalRegistration(registrationId);
