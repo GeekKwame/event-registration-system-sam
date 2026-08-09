@@ -66,20 +66,22 @@ def handler(event, context):
                     )
                     reg_items.extend(reg_response.get("Items", []))
 
-        def normalize_event_id(eid):
-            if not eid:
-                return ""
-            s = str(eid).strip()
-            if s == "evt-101":
-                return "evt-001"
-            if s == "evt-102":
-                return "evt-002"
-            return s
+                def normalize_event_id(eid):
+                    if not eid:
+                        return ""
+                    s = str(eid).strip()
+                    if s == "evt-101":
+                        return "evt-001"
+                    if s == "evt-102":
+                        return "evt-002"
+                    return s
 
-        for reg in reg_items:
-            eid = normalize_event_id(reg.get("eventId"))
-            if eid:
-                reg_counts[eid] = reg_counts.get(eid, 0) + 1
+                for reg in reg_items:
+                    eid = normalize_event_id(reg.get("eventId"))
+                    if eid:
+                        reg_counts[eid] = reg_counts.get(eid, 0) + 1
+            except Exception:
+                pass
 
         for item in items:
             eid = normalize_event_id(item.get("eventId"))
