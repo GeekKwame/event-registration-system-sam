@@ -262,17 +262,6 @@ class EventPulseApp {
       });
     });
 
-    // Provider filter buttons
-    this.filterButtons = document.querySelectorAll('.btn-filter');
-    this.filterButtons.forEach(btn => {
-      btn.addEventListener('click', () => {
-        const provider = btn.getAttribute('data-provider');
-        this.filterButtons.forEach(b => b.classList.remove('active'));
-        btn.classList.add('active');
-        this.filterEventsByProvider(provider);
-      });
-    });
-
     // Search registrations
     this.formSearchEmail.addEventListener('submit', (e) => {
       e.preventDefault();
@@ -458,25 +447,6 @@ class EventPulseApp {
     } finally {
       this.eventsLoading.classList.add('hidden');
     }
-  }
-
-  // ----------------------------------------------------------
-  // Filter Events by Provider
-  // ----------------------------------------------------------
-  filterEventsByProvider(provider) {
-    if (!this.events || this.events.length === 0) return;
-    if (!provider || provider === 'all') {
-      this.renderEvents(this.events);
-      return;
-    }
-
-    const filtered = this.events.filter(evt => {
-      const pId = String(evt.providerId || evt.provider_id || '').toLowerCase();
-      if (provider === 'my-hub') return !pId || pId === 'local' || pId === 'my-hub';
-      return pId.includes(provider.toLowerCase());
-    });
-
-    this.renderEvents(filtered);
   }
 
   // ----------------------------------------------------------
