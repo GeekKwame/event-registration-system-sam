@@ -882,12 +882,19 @@ class EventPulseApp {
       const regId = reg.registrationId || reg.registration_id || reg.id || reg._id || 'N/A';
       const eventId = String(reg.eventId || reg.event_id || reg.sourceEventId || 'N/A').trim();
 
-      const foundEvt = this.events.find(e =>
-        String(e.eventId) === eventId ||
-        String(e.event_id) === eventId ||
-        String(e.sourceEventId) === eventId ||
-        String(e.id) === eventId
-      );
+      const normId = (id) => {
+        const s = String(id || '').trim();
+        if (s === 'evt-101') return 'evt-001';
+        if (s === 'evt-102') return 'evt-002';
+        return s;
+      };
+      const canonicalRegEvtId = normId(eventId);
+
+      const foundEvt = this.events.find(e => {
+        const eId = normId(e.eventId || e.event_id || e.id);
+        const sId = normId(e.sourceEventId || e.source_event_id);
+        return eId === canonicalRegEvtId || sId === canonicalRegEvtId;
+      });
       const eventName = reg.eventName || (foundEvt ? (foundEvt.eventName || foundEvt.name) : null) || `Event: ${eventId}`;
       const email = reg.email || defaultEmail || this.currentSearchEmail || 'N/A';
       const nameStr = reg.name ? String(reg.name).trim() : '';
