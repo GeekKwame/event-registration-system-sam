@@ -20,7 +20,7 @@ Parameters:
       CloudWatch alarm notifications. Enabled by default.
   ProvidersJson:
     Type: String
-    Default: '[{"id":"gloria-events","baseUrl":"https://djabididt6.execute-api.us-east-1.amazonaws.com"},{"id":"accra-events","baseUrl":"https://mmrq6ebalh.execute-api.us-east-1.amazonaws.com"}]'
+    Default: '[]'
     Description: JSON provider registry. Store authenticated provider settings in Secrets Manager in production.
 
 Conditions:

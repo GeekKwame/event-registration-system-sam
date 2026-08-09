@@ -24,21 +24,6 @@ function normalizeApiUrl(value) {
   return String(value || '').trim().replace(/[,\s]+$/, '').replace(/\/+$/, '');
 }
 
-function resolveStoredApiUrl() {
-  const saved = normalizeApiUrl(localStorage.getItem(STORAGE_KEY_API_URL) || DEFAULT_API_URL);
-  if (saved.includes('djabididt6.execute-api')) {
-    localStorage.setItem('eventpulse_provider_filter', 'gloria-events');
-    localStorage.setItem(STORAGE_KEY_API_URL, HUB_API_URL);
-    return HUB_API_URL;
-  }
-  if (saved.includes('mmrq6ebalh.execute-api')) {
-    localStorage.setItem('eventpulse_provider_filter', 'accra-events');
-    localStorage.setItem(STORAGE_KEY_API_URL, HUB_API_URL);
-    return HUB_API_URL;
-  }
-  return saved;
-}
-
 function unwrapApiPayload(payload) {
   if (payload && typeof payload.body === 'string') {
     try { return JSON.parse(payload.body); } catch { return payload; }
@@ -182,8 +167,7 @@ const ICONS = {
 // ============================================================
 class EventPulseApp {
   constructor() {
-    this.apiUrl = resolveStoredApiUrl();
-    this.providerFilter = localStorage.getItem('eventpulse_provider_filter') || '';
+    this.apiUrl = normalizeApiUrl(localStorage.getItem(STORAGE_KEY_API_URL) || DEFAULT_API_URL);
     this.events = [];
     this.allRegistrations = [];
     this.currentSearchEmail = '';
@@ -290,17 +274,14 @@ class EventPulseApp {
       }
     });
 
-    // Preset buttons — always connect to the hub; optional provider filter
+    // Preset buttons — connect directly to selected API Gateway URL
     this.presetButtons = document.querySelectorAll('.btn-preset');
     this.presetButtons.forEach(btn => {
       btn.addEventListener('click', () => {
-        const url = normalizeApiUrl(btn.getAttribute('data-url') || HUB_API_URL);
-        const filter = btn.getAttribute('data-provider-filter') || '';
-        this.presetButtons.forEach(b => b.classList.remove('active'));
-        btn.classList.add('active');
+        const url = normalizeApiUrl(btn.getAttribute('data-url') || DEFAULT_API_URL);
         this.apiUrlInput.value = url;
         this.setApiUrl(url);
-        this.setProviderFilter(filter);
+        this.syncPresetButtons();
         this.checkApiStatusAndFetch();
       });
     });
@@ -363,42 +344,8 @@ class EventPulseApp {
   syncPresetButtons() {
     if (!this.presetButtons) return;
     this.presetButtons.forEach(btn => {
-      const filter = btn.getAttribute('data-provider-filter') || '';
-      btn.classList.toggle('active', filter === this.providerFilter);
-    });
-  }
-
-  setProviderFilter(filter) {
-    this.providerFilter = String(filter || '').trim();
-    if (this.providerFilter) {
-      localStorage.setItem('eventpulse_provider_filter', this.providerFilter);
-    } else {
-      localStorage.removeItem('eventpulse_provider_filter');
-    }
-    this.syncPresetButtons();
-  }
-
-  getSessionSeatDelta(eventId) {
-    return Number(this.sessionSeatDeltas[String(eventId || '')] || 0);
-  }
-
-  adjustSessionSeatDelta(eventId, delta) {
-    const key = String(eventId || '');
-    if (!key) return;
-    const next = Math.max(0, this.getSessionSeatDelta(key) + delta);
-    if (next === 0) {
-      delete this.sessionSeatDeltas[key];
-    } else {
-      this.sessionSeatDeltas[key] = next;
-    }
-  }
-
-  applyProviderFilter(eventsList) {
-    if (!this.providerFilter) return eventsList;
-    const needle = this.providerFilter.toLowerCase();
-    return eventsList.filter(evt => {
-      const providerId = String(evt.providerId || evt.provider_id || '').toLowerCase();
-      return providerId.includes(needle);
+      const btnUrl = normalizeApiUrl(btn.getAttribute('data-url'));
+      btn.classList.toggle('active', btnUrl === this.apiUrl);
     });
   }
 
@@ -527,7 +474,7 @@ class EventPulseApp {
       });
 
       this.updateStatusBadge('connected', 'Connected');
-      this.renderEvents(this.applyProviderFilter(this.events));
+      this.renderEvents(this.events);
     } catch (err) {
       console.error('Error fetching events:', err);
       this.updateStatusBadge('disconnected', 'Connection Failed');
