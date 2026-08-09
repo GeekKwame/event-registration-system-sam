@@ -54,16 +54,16 @@
         </div>
       </div>
 
-      <div class="quick-connect-bar" role="group" aria-label="Quick connect presets">
-        <span class="quick-connect-title">Presets:</span>
-        <button type="button" class="btn-preset active" id="preset-my-api" data-url="https://kems8drwn6.execute-api.us-west-1.amazonaws.com/Prod">
-          🟢 My API (us-west-1)
+      <div class="quick-connect-bar" role="group" aria-label="Hub connection and provider filters">
+        <span class="quick-connect-title">View:</span>
+        <button type="button" class="btn-preset active" id="preset-all" data-url="https://kems8drwn6.execute-api.us-west-1.amazonaws.com/Prod" data-provider-filter="">
+          🟢 All providers
         </button>
-        <button type="button" class="btn-preset" id="preset-gloria-api" data-url="https://djabididt6.execute-api.us-east-1.amazonaws.com">
-          🟣 Gloria (us-east-1)
+        <button type="button" class="btn-preset" id="preset-gloria-api" data-url="https://kems8drwn6.execute-api.us-west-1.amazonaws.com/Prod" data-provider-filter="gloria-events">
+          🟣 Gloria only
         </button>
-        <button type="button" class="btn-preset" id="preset-dawuni-api" data-url="https://mmrq6ebalh.execute-api.us-east-1.amazonaws.com">
-          🔵 Dawuni (us-east-1)
+        <button type="button" class="btn-preset" id="preset-dawuni-api" data-url="https://kems8drwn6.execute-api.us-west-1.amazonaws.com/Prod" data-provider-filter="accra-events">
+          🔵 Dawuni only
         </button>
       </div>
     </section>
@@ -143,7 +143,7 @@
         <div id="events-empty" class="empty-state hidden">
           <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"/></svg>
           <h3>No events found</h3>
-          <p>Connect an API endpoint or check your network connection to load events.</p>
+          <p id="events-empty-message">Connect an API endpoint or check your network connection to load events.</p>
         </div>
       </section>
 

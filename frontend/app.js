@@ -507,9 +507,9 @@ class EventPulseApp {
           apiRegCount = Math.max(capacity - avail, 0);
         }
 
-        // Bump counts for registrations made this session before the API reflects them.
-        const sessionDelta = this.getSessionSeatDelta(id);
-        const totalRegCount = apiRegCount + sessionDelta;
+        // Server API Gateway apiRegCount is authoritative when connected to API Gateway.
+        // Fall back to local storage count only when running in offline/demo mode.
+        const totalRegCount = this.apiUrl ? apiRegCount : getLocalRegistrationCount(id, sourceId);
         const locationStr = item.location || item.venue || item.address || item.place || '';
         const dateStr = item.date ? (item.time ? `${item.date} (${item.time})` : item.date) : 'TBD';
 
@@ -734,12 +734,8 @@ class EventPulseApp {
     }
 
     try {
-      // Use the resilient fetch helper here too — previously this call
-      // used a plain fetch() while every other API call went through
-      // fetchWithCorsFallback, so registrations would fail outright on
-      // API Gateways that don't have CORS configured, even though the
-      // rest of the app could route around it via the proxy fallbacks.
-      const response = await fetchWithCorsFallback(`${this.apiUrl}/register`, {
+      const targetUrl = this.apiUrl || HUB_API_URL;
+      const response = await fetch(`${targetUrl}/register`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -761,7 +757,6 @@ class EventPulseApp {
           email, name, createdAt: new Date().toISOString()
         });
 
-        this.adjustSessionSeatDelta(eventId, 1);
         localStorage.setItem(STORAGE_KEY_LAST_EMAIL, email);
         this.currentSearchEmail = email;
         this.searchEmailInput.value = email;
@@ -1017,20 +1012,11 @@ class EventPulseApp {
 
     try {
       const encodedId = encodeURIComponent(registrationId);
-      // Same fix as submitRegistration(): route DELETE through the
-      // CORS-fallback helper instead of a bare fetch(), so cancellation
-      // isn't the one action in the app that breaks on APIs without
-      // permissive CORS headers.
-      const res = await fetchWithCorsFallback(`${this.apiUrl}/registration/${encodedId}`, { method: 'DELETE' });
+      const targetUrl = this.apiUrl || HUB_API_URL;
+      const res = await fetch(`${targetUrl}/registration/${encodedId}`, { method: 'DELETE' });
 
       if (res.ok) {
-        const cancelled = this.allRegistrations.find(r =>
-          String(r.registrationId || r.registration_id || r.id || '') === String(registrationId)
-        );
         removeLocalRegistration(registrationId);
-        if (cancelled) {
-          this.adjustSessionSeatDelta(cancelled.eventId || cancelled.event_id, -1);
-        }
         this.showToast('Registration cancelled successfully', 'success');
         this.fetchEvents();
         this.fetchRegistrations(this.currentSearchEmail);
