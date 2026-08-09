@@ -13,7 +13,8 @@ const STORAGE_KEY_API_URL = 'eventpulse_api_url';
 const STORAGE_KEY_LAST_EMAIL = 'eventpulse_last_registration_email';
 const STORAGE_KEY_LOCAL_REGS = 'eventpulse_local_registrations_store';
 
-const DEFAULT_API_URL = 'https://kems8drwn6.execute-api.us-west-1.amazonaws.com/Prod';
+const HUB_API_URL = 'https://kems8drwn6.execute-api.us-west-1.amazonaws.com/Prod';
+const DEFAULT_API_URL = HUB_API_URL;
 
 // ============================================================
 // Utility Functions
@@ -21,6 +22,21 @@ const DEFAULT_API_URL = 'https://kems8drwn6.execute-api.us-west-1.amazonaws.com/
 
 function normalizeApiUrl(value) {
   return String(value || '').trim().replace(/[,\s]+$/, '').replace(/\/+$/, '');
+}
+
+function resolveStoredApiUrl() {
+  const saved = normalizeApiUrl(localStorage.getItem(STORAGE_KEY_API_URL) || DEFAULT_API_URL);
+  if (saved.includes('djabididt6.execute-api')) {
+    localStorage.setItem('eventpulse_provider_filter', 'gloria-events');
+    localStorage.setItem(STORAGE_KEY_API_URL, HUB_API_URL);
+    return HUB_API_URL;
+  }
+  if (saved.includes('mmrq6ebalh.execute-api')) {
+    localStorage.setItem('eventpulse_provider_filter', 'accra-events');
+    localStorage.setItem(STORAGE_KEY_API_URL, HUB_API_URL);
+    return HUB_API_URL;
+  }
+  return saved;
 }
 
 function unwrapApiPayload(payload) {
@@ -48,29 +64,50 @@ function removeLocalRegistration(regId) {
   localStorage.setItem(STORAGE_KEY_LOCAL_REGS, JSON.stringify(regs));
 }
 
-function getLocalRegistrationCount(eventId, sourceEventId) {
-  const regs = getLocalRegistrations();
-  return regs.filter(r => {
-    const eId = String(eventId || '');
-    const sId = String(sourceEventId || '');
-    const rId = String(r.eventId || r.event_id || '');
-    const rSrcId = String(r.sourceEventId || r.source_event_id || '');
-    return (eId && (rId === eId || rSrcId === eId)) || (sId && (rId === sId || rSrcId === sId));
-  }).length;
+/** Drop local-only cache entries that the API already returned. */
+function reconcileLocalRegistrations(remoteRegs) {
+  const remoteIds = new Set(
+    (remoteRegs || [])
+      .map(r => String(r.registrationId || r.registration_id || r.id || '').trim())
+      .filter(Boolean)
+  );
+  const remoteKeys = new Set(
+    (remoteRegs || []).map(r => {
+      const email = String(r.email || '').toLowerCase();
+      const eventId = String(r.eventId || r.event_id || r.sourceEventId || '').trim();
+      return `${email}|${eventId}`;
+    })
+  );
+  const kept = getLocalRegistrations().filter(r => {
+    const id = String(r.registrationId || r.registration_id || r.id || '').trim();
+    if (id && remoteIds.has(id)) return false;
+    const key = `${String(r.email || '').toLowerCase()}|${String(r.eventId || r.event_id || r.sourceEventId || '').trim()}`;
+    return !remoteKeys.has(key);
+  });
+  localStorage.setItem(STORAGE_KEY_LOCAL_REGS, JSON.stringify(kept));
 }
 
 /**
- * Resilient fetch with CORS proxy fallbacks.
+ * Resilient fetch with CORS proxy fallbacks for read-only requests.
+ * POST/DELETE always use a direct fetch — proxies cannot reliably forward mutations.
  */
 async function fetchWithCorsFallback(url, options = {}) {
+  const method = String(options.method || 'GET').toUpperCase();
+  const isMutation = method !== 'GET' && method !== 'HEAD';
+
   try {
     const res = await fetch(url, options);
-    if (res.ok) return res;
+    if (res.ok || isMutation) return res;
   } catch (err) {
+    if (isMutation) throw err;
     console.warn(`Direct fetch to ${url} failed. Trying CORS fallback...`, err);
   }
 
-  // Proxy Fallback 1: corsproxy.io
+  if (isMutation) {
+    throw new Error('Network request failed');
+  }
+
+  // Proxy Fallback 1: corsproxy.io (GET only)
   try {
     const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(url)}`;
     const proxyRes = await fetch(proxyUrl, options);
@@ -79,7 +116,7 @@ async function fetchWithCorsFallback(url, options = {}) {
     console.warn('corsproxy.io fallback failed:', e);
   }
 
-  // Proxy Fallback 2: api.allorigins.win
+  // Proxy Fallback 2: api.allorigins.win (GET only)
   try {
     const allOriginsUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`;
     const allRes = await fetch(allOriginsUrl);
@@ -102,7 +139,7 @@ async function fetchWithCorsFallback(url, options = {}) {
     console.warn('AllOrigins fallback failed:', e);
   }
 
-  return fetch(url, options);
+  throw new Error('Unable to reach API');
 }
 
 // ============================================================
@@ -145,12 +182,15 @@ const ICONS = {
 // ============================================================
 class EventPulseApp {
   constructor() {
-    this.apiUrl = normalizeApiUrl(localStorage.getItem(STORAGE_KEY_API_URL) || DEFAULT_API_URL);
+    this.apiUrl = resolveStoredApiUrl();
+    this.providerFilter = localStorage.getItem('eventpulse_provider_filter') || '';
     this.events = [];
     this.allRegistrations = [];
     this.currentSearchEmail = '';
     this.currentSearchQuery = '';
     this._pendingConfirm = null;
+    /** In-memory seat deltas for registrations made this session before API counts refresh. */
+    this.sessionSeatDeltas = {};
 
     this.initElements();
     this.bindEvents();
@@ -173,6 +213,7 @@ class EventPulseApp {
     this.eventsLoading = document.getElementById('events-loading');
     this.eventsGrid = document.getElementById('events-grid');
     this.eventsEmpty = document.getElementById('events-empty');
+    this.eventsEmptyMessage = document.getElementById('events-empty-message');
 
     this.formSearchEmail = document.getElementById('form-search-email');
     this.searchEmailInput = document.getElementById('search-email-input');
@@ -249,15 +290,17 @@ class EventPulseApp {
       }
     });
 
-    // Preset Quick-Connect buttons
+    // Preset buttons — always connect to the hub; optional provider filter
     this.presetButtons = document.querySelectorAll('.btn-preset');
     this.presetButtons.forEach(btn => {
       btn.addEventListener('click', () => {
-        const url = normalizeApiUrl(btn.getAttribute('data-url'));
+        const url = normalizeApiUrl(btn.getAttribute('data-url') || HUB_API_URL);
+        const filter = btn.getAttribute('data-provider-filter') || '';
         this.presetButtons.forEach(b => b.classList.remove('active'));
         btn.classList.add('active');
         this.apiUrlInput.value = url;
         this.setApiUrl(url);
+        this.setProviderFilter(filter);
         this.checkApiStatusAndFetch();
       });
     });
@@ -304,14 +347,65 @@ class EventPulseApp {
   initApp() {
     if (this.apiUrl) {
       this.apiUrlInput.value = this.apiUrl;
-      if (this.presetButtons) {
-        this.presetButtons.forEach(btn => {
-          const btnUrl = normalizeApiUrl(btn.getAttribute('data-url'));
-          btn.classList.toggle('active', btnUrl === this.apiUrl);
-        });
-      }
     }
+    this.syncPresetButtons();
+
+    if (window.location.protocol === 'file:') {
+      this.showToast(
+        'Opened from a local file — register/cancel may fail. Use a local server or GitHub Pages for full API access.',
+        'error'
+      );
+    }
+
     this.checkApiStatusAndFetch();
+  }
+
+  syncPresetButtons() {
+    if (!this.presetButtons) return;
+    this.presetButtons.forEach(btn => {
+      const filter = btn.getAttribute('data-provider-filter') || '';
+      btn.classList.toggle('active', filter === this.providerFilter);
+    });
+  }
+
+  setProviderFilter(filter) {
+    this.providerFilter = String(filter || '').trim();
+    if (this.providerFilter) {
+      localStorage.setItem('eventpulse_provider_filter', this.providerFilter);
+    } else {
+      localStorage.removeItem('eventpulse_provider_filter');
+    }
+    this.syncPresetButtons();
+  }
+
+  getSessionSeatDelta(eventId) {
+    return Number(this.sessionSeatDeltas[String(eventId || '')] || 0);
+  }
+
+  adjustSessionSeatDelta(eventId, delta) {
+    const key = String(eventId || '');
+    if (!key) return;
+    const next = Math.max(0, this.getSessionSeatDelta(key) + delta);
+    if (next === 0) {
+      delete this.sessionSeatDeltas[key];
+    } else {
+      this.sessionSeatDeltas[key] = next;
+    }
+  }
+
+  applyProviderFilter(eventsList) {
+    if (!this.providerFilter) return eventsList;
+    const needle = this.providerFilter.toLowerCase();
+    return eventsList.filter(evt => {
+      const providerId = String(evt.providerId || evt.provider_id || '').toLowerCase();
+      return providerId.includes(needle);
+    });
+  }
+
+  setEmptyStateMessage(message) {
+    if (this.eventsEmptyMessage) {
+      this.eventsEmptyMessage.textContent = message;
+    }
   }
 
   // ----------------------------------------------------------
@@ -393,6 +487,7 @@ class EventPulseApp {
     }
 
     try {
+      this.setEmptyStateMessage('Connect an API endpoint or check your network connection to load events.');
       const res = await fetchWithCorsFallback(`${this.apiUrl}/events`);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = unwrapApiPayload(await res.json());
@@ -412,14 +507,9 @@ class EventPulseApp {
           apiRegCount = Math.max(capacity - avail, 0);
         }
 
-        // Always factor in locally-tracked registrations (not just in the
-        // no-API/demo path). This covers the gap right after a user
-        // registers, where the API's own count may not have caught up
-        // yet (eventual consistency) but we already know about the seat
-        // locally — without this, a just-registered seat could silently
-        // "reappear" as available until the backend refreshes.
-        const localCount = getLocalRegistrationCount(id, sourceId);
-        const totalRegCount = Math.max(apiRegCount, localCount);
+        // Bump counts for registrations made this session before the API reflects them.
+        const sessionDelta = this.getSessionSeatDelta(id);
+        const totalRegCount = apiRegCount + sessionDelta;
         const locationStr = item.location || item.venue || item.address || item.place || '';
         const dateStr = item.date ? (item.time ? `${item.date} (${item.time})` : item.date) : 'TBD';
 
@@ -437,12 +527,16 @@ class EventPulseApp {
       });
 
       this.updateStatusBadge('connected', 'Connected');
-      this.renderEvents(this.events);
+      this.renderEvents(this.applyProviderFilter(this.events));
     } catch (err) {
       console.error('Error fetching events:', err);
       this.updateStatusBadge('disconnected', 'Connection Failed');
       this.showToast('Failed to load events from API Gateway', 'error');
-      this.renderEvents(MOCK_EVENTS);
+      this.events = [];
+      this.setEmptyStateMessage(
+        'Could not reach the API. Check the URL, network connection, and that the API stage path is correct (e.g. /Prod).'
+      );
+      this.renderEvents([]);
     } finally {
       this.eventsLoading.classList.add('hidden');
     }
@@ -458,6 +552,9 @@ class EventPulseApp {
 
     if (!eventsList || eventsList.length === 0) {
       this.eventsGrid.classList.add('hidden');
+      if (this.providerFilter && this.events.length > 0) {
+        this.setEmptyStateMessage('No events matched this provider filter. Try "All providers".');
+      }
       this.eventsEmpty.classList.remove('hidden');
       return;
     }
@@ -627,6 +724,7 @@ class EventPulseApp {
         sourceEventId: this.selectedSourceEventId || eventId,
         email, name, createdAt: new Date().toISOString()
       });
+      this.adjustSessionSeatDelta(eventId, 1);
       localStorage.setItem(STORAGE_KEY_LAST_EMAIL, email);
       this.currentSearchEmail = email;
       this.searchEmailInput.value = email;
@@ -663,6 +761,7 @@ class EventPulseApp {
           email, name, createdAt: new Date().toISOString()
         });
 
+        this.adjustSessionSeatDelta(eventId, 1);
         localStorage.setItem(STORAGE_KEY_LAST_EMAIL, email);
         this.currentSearchEmail = email;
         this.searchEmailInput.value = email;
@@ -758,6 +857,7 @@ class EventPulseApp {
       });
       const combinedList = Array.from(combinedMap.values());
 
+      reconcileLocalRegistrations(remoteRegs);
       this.allRegistrations = combinedList;
       this.filterAndRenderRegistrations(this.currentSearchQuery, parentEmail);
     } catch (err) {
@@ -904,6 +1004,12 @@ class EventPulseApp {
 
     if (!this.apiUrl) {
       removeLocalRegistration(registrationId);
+      const cancelled = this.allRegistrations.find(r =>
+        String(r.registrationId || r.registration_id || r.id || '') === String(registrationId)
+      );
+      if (cancelled) {
+        this.adjustSessionSeatDelta(cancelled.eventId || cancelled.event_id, -1);
+      }
       this.showToast(`Registration ${registrationId} cancelled (Demo Mode)`, 'success');
       this.fetchRegistrations(this.currentSearchEmail);
       return;
@@ -918,7 +1024,13 @@ class EventPulseApp {
       const res = await fetchWithCorsFallback(`${this.apiUrl}/registration/${encodedId}`, { method: 'DELETE' });
 
       if (res.ok) {
+        const cancelled = this.allRegistrations.find(r =>
+          String(r.registrationId || r.registration_id || r.id || '') === String(registrationId)
+        );
         removeLocalRegistration(registrationId);
+        if (cancelled) {
+          this.adjustSessionSeatDelta(cancelled.eventId || cancelled.event_id, -1);
+        }
         this.showToast('Registration cancelled successfully', 'success');
         this.fetchEvents();
         this.fetchRegistrations(this.currentSearchEmail);
