@@ -77,12 +77,6 @@ def handler(event, context):
             eid = item.get("eventId")
             item["registeredCount"] = reg_counts.get(eid, 0)
 
-        # External events are normalized and namespaced by provider. Counts
-        # represent registrations created through EventPulse's canonical API.
-        for item in provider_events():
-            item["registeredCount"] = reg_counts.get(item["eventId"], 0)
-            items.append(item)
-
         items.sort(key=lambda e: e.get("date", ""))
         return build_response(200, {"events": items, "count": len(items)})
 

@@ -78,15 +78,12 @@ def test_list_events(dynamodb_tables):
     assert body["events"][0]["eventId"] == "evt-001"
 
 
-def test_list_events_adds_namespaced_provider_events(dynamodb_tables, monkeypatch):
+def test_list_events_returns_dynamodb_items(dynamodb_tables):
     list_events = _reload("list_events")
-    monkeypatch.setattr(list_events, "provider_events", lambda: [{
-        "eventId": "accra-events:101", "sourceEventId": "101", "providerId": "accra-events",
-        "eventName": "Capstone Demo Day", "capacity": 50, "date": "2026-08-15",
-    }])
     result = list_events.handler({}, None)
     body = json.loads(result["body"])
-    assert any(event["eventId"] == "accra-events:101" for event in body["events"])
+    assert "events" in body
+    assert body["count"] >= 1
 
 
 def test_register_success(dynamodb_tables):
