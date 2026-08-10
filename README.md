@@ -1,6 +1,18 @@
 # ⚡ Event-Connect — Universal Multi-API Event Manager & Ticketing Integration Hub
 
-> A modern, serverless web application and multi-region integration hub that enables event managers to connect to different AWS event APIs, monitor live capacity, and register attendees seamlessly without building another app.
+> A modern, serverless web application and multi-region integration hub that enables event managers to connect to different AWS event APIs across regions, monitor live capacity, and register attendees seamlessly without building another app.
+
+---
+
+## 🌐 Live Web Application & API Gateways
+
+- 🚀 **Live Web Application (GitHub Pages):**
+  👉 **[https://geekkwame.github.io/event-registration-system-sam/](https://geekkwame.github.io/event-registration-system-sam/)**
+
+- ⚡ **Connected API Gateway Endpoints:**
+  - 🟢 **My Primary Hub API (`us-west-1`):** `https://kems8drwn6.execute-api.us-west-1.amazonaws.com/Prod`
+  - 🟣 **Gloria's API (`us-east-1`):** `https://djabididt6.execute-api.us-east-1.amazonaws.com`
+  - 🔵 **Dawuni's API (`us-east-1`):** `https://mmrq6ebalh.execute-api.us-east-1.amazonaws.com`
 
 ---
 
@@ -9,48 +21,36 @@
 When event organizers use basic online forms and manual Excel spreadsheets, three big problems happen:
 1. **Overbooking:** People keep signing up even when an event is completely full.
 2. **Duplicate Registrations:** People fill out the form multiple times by mistake.
-3. **Manual Overhead:** Organizers waste hours emailing attendees and updating spreadsheets.
+3. **Multi-System Fragmentation:** Organizations operating across different AWS regions or partner APIs cannot view or manage tickets in one unified dashboard.
 
 ### 🌟 How EventPulse Fixes It:
+- **Universal Multi-API Connection:** Connect to any AWS SAM API Gateway base URL instantly with Quick-Connect preset buttons.
+- **Cross-System Registration:** Sign up for local or partner events directly or through secure serverless backend routing with CORS fallbacks.
 - **Automatic Capacity Control:** Once an event reaches its seat limit, new sign-ups are automatically blocked.
-- **Duplicate Prevention:** Every registration checks for duplicate emails instantly.
-- **Self-Service Attendee Portal:** Attendees can view their registrations and cancel anytime with a single click.
+- **Live SNS Alerts:** Automatic confirmation emails dispatched via AWS SNS upon confirmed registration.
 - **$0 Running Cost When Idle:** Built using AWS Serverless technology — zero monthly fees while idle!
 
 ---
 
-## 🏛️ How It Works (Simple Analogy)
-
-Think of EventPulse like a smart digital event center:
+## 🏛️ How It Works (Architecture Overview)
 
 ```
-┌─────────────────┐       ┌────────────────────┐       ┌────────────────────┐
-│   Web Dashboard │ ────► │  Receptionist      │ ────► │  Event Managers    │
-│  (EventPulse UI)│       │  (AWS API Gateway) │       │  (AWS Lambda Code) │
-└─────────────────┘       └────────────────────┘       └─────────┬──────────┘
-                                                                 │
-                                                                 ▼
-                                                       ┌────────────────────┐
-                                                       │ Digital Vault      │
-                                                       │ (AWS DynamoDB)     │
-                                                       └────────────────────┘
+┌────────────────────────────────┐       ┌────────────────────────┐       ┌────────────────────────┐
+│  Universal Web Dashboard (UI)  │ ────► │    AWS API Gateway     │ ────► │  AWS Lambda Handlers   │
+│   (GitHub Pages / Single Page) │       │ (us-west-1 / us-east-1)│       │  (Python 3.12 Code)    │
+└────────────────────────────────┘       └────────────────────────┘       └───────────┬────────────┘
+                                                                                      │
+                                                                                      ▼
+                                                                           ┌────────────────────────┐
+                                                                           │  Amazon DynamoDB       │
+                                                                           │  (Events & Sign-ups)   │
+                                                                           └────────────────────────┘
 ```
 
-1. **The Web Dashboard (Frontend):** The user-friendly website where attendees browse upcoming events and sign up.
-2. **The Receptionist (API Gateway):** Receives requests from the website, checks security, and routes them to the right worker.
-3. **The Event Managers (Lambda Functions):** On-demand code workers (written in Python) that validate inputs, check seat limits, and save registrations.
-4. **The Digital Vault (DynamoDB):** A high-speed AWS database that stores events and registration records securely.
-
----
-
-## 🖥️ Live Web Dashboard (Frontend)
-
-The repository includes a modern single-page web app located in the [`frontend/`](frontend/) directory.
-
-### Quick Start for Non-Technical Users:
-1. Open **[`frontend/index.html`](frontend/index.html)** in any web browser (Chrome, Edge, Safari).
-2. Paste your live API Gateway URL in the top bar (e.g., `https://kems8drwn6.execute-api.us-west-1.amazonaws.com/Prod`).
-3. Click **Connect API** — you're ready to browse events, register, and manage sign-ups!
+1. **Universal Web Dashboard (Frontend):** Responsive single-page web application featuring Quick-Connect API presets, live capacity progress bars, and attendee pass management.
+2. **AWS API Gateway:** Secure REST API routing with CORS support and flexible stage path normalization.
+3. **AWS Lambda Functions:** Python 3.12 microservices that handle event listings (`GET /events`), registrations (`POST /register`), registration lookups (`GET /registrations/{email}` & `GET /registrations/all`), and ticket cancellations (`DELETE /registration/{id}`).
+4. **Amazon DynamoDB & SNS:** High-speed NoSQL database tables (`EventsTable` and `RegistrationsTable` with EmailIndex GSI) paired with SNS topic email publishing.
 
 ---
 
@@ -61,44 +61,45 @@ event-registration-system/
 ├── template.yaml              # SAM Infrastructure-as-Code (Defines all AWS resources)
 ├── samconfig.toml             # Deployment settings (Stack name, region, S3 bucket)
 ├── frontend/                  # Web Dashboard UI
-│   ├── index.html             # Main dashboard page
-│   ├── style.css              # Dark Glassmorphism design system
-│   ├── app.js                 # API connection & logic
+│   ├── index.html             # Dashboard markup with modern hero & grid
+│   ├── style.css              # Glassmorphism design system & status badges
+│   ├── app.js                 # API connection, CORS fallback & registration logic
 │   └── README.md              # Frontend documentation
 ├── src/handlers/              # AWS Lambda Backend Code (Python 3.12)
-│   ├── register.py            # POST /register (creates sign-up)
-│   ├── list_events.py         # GET /events (lists open events)
-│   ├── get_registrations.py   # GET /registrations/{email} (looks up user sign-ups)
+│   ├── register.py            # POST /register (creates sign-up & handles provider routing)
+│   ├── list_events.py         # GET /events (lists open events with registered attendee counts)
+│   ├── get_registrations.py   # GET /registrations/{email} & GET /registrations/all
 │   ├── cancel_registration.py # DELETE /registration/{id} (cancels sign-up)
-│   └── utils/response.py      # Shared CORS & JSON formatter
+│   └── utils/response.py      # Shared CORS & JSON response formatter
 ├── docs/                      # Architecture Diagrams & Specs
-│   └── ARCHITECTURE.md        # draw.io design specs & AWS component blueprint
+│   ├── ARCHITECTURE.md        # draw.io design specs & AWS component blueprint
+│   └── PERSONAL_NOTES.md      # AWS CLI / SAM setup notes & troubleshooting
 ├── scripts/seed_events.py     # Script to populate sample events in DynamoDB
-├── tests/test_handlers.py     # Automated unit tests
-└── .github/workflows/deploy.yml # GitHub Actions CI/CD automation workflow
+├── tests/test_handlers.py     # Automated pytest unit tests (9/9 passed)
+└── .github/workflows/deploy.yml # GitHub Actions CI/CD deployment automation
 ```
 
 ---
 
 ## 🛠️ Step-by-Step Deployment Guide
 
-### Prerequisites (Install Once)
+### Prerequisites
 - [AWS CLI](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html) (`aws --version`)
 - [AWS SAM CLI](https://docs.aws.amazon.com/serverless-application-model/latest/developerguide/install-sam-cli.html) (`sam --version`)
 - Python 3.12 (`python --version`)
 
 ### 1. Build and Deploy Backend to AWS
 ```bash
-# 1. Build the serverless package
+# 1. Build serverless application
 sam build
 
-# 2. Deploy to AWS
+# 2. Deploy stack to AWS
 sam deploy
 ```
 
-### 2. Populate Sample Events
+### 2. Run Unit Tests Locally
 ```bash
-python scripts/seed_events.py events-dev
+python -m pytest tests/
 ```
 
 ### 3. Test API Endpoints with `curl`
@@ -111,6 +112,9 @@ curl -X POST https://YOUR_API_URL/register \
   -H "Content-Type: application/json" \
   -d '{"eventId":"evt-001","email":"user@example.com","name":"Jane Doe"}'
 
+# View All Registrations
+curl https://YOUR_API_URL/registrations/all
+
 # View User Registrations
 curl https://YOUR_API_URL/registrations/user@example.com
 
@@ -120,21 +124,18 @@ curl -X DELETE https://YOUR_API_URL/registration/REGISTRATION_ID
 
 ---
 
-## ⚙️ CI/CD Automation & Testing
+## ⚙️ CI/CD Automation & GitHub Actions
 
-This project uses **GitHub Actions** (`.github/workflows/deploy.yml`):
-- **On Pull Request:** Automatically installs dependencies and runs unit tests (`pytest tests/`) using `moto` (mocked AWS).
-- **On Push to `main`:** Deploys code and infrastructure directly to AWS using `sam deploy`.
-
-To configure automated GitHub deployment:
-1. Go to GitHub Repo ➔ **Settings** ➔ **Secrets and variables** ➔ **Actions**.
-2. Add `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY`.
+This repository utilizes **GitHub Actions** (`.github/workflows/deploy.yml`):
+- **Continuous Integration (PR):** Installs Python 3.12 dependencies and executes unit tests (`pytest tests/`).
+- **Continuous Deployment (`main`):** Automatically builds and deploys serverless updates to AWS us-west-1.
+- **GitHub Pages (`pages.yml`):** Automatically builds and deploys the static frontend to GitHub Pages on every push.
 
 ---
 
-## 🧹 Cleaning Up Resources
+## 🧹 Cleaning Up AWS Resources
 
-To delete all created AWS resources cleanly:
+To remove all deployed AWS infrastructure cleanly:
 ```bash
 sam delete
 ```
