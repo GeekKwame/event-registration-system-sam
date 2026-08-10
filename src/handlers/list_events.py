@@ -13,6 +13,17 @@ EVENTS_TABLE = os.environ["EVENTS_TABLE"]
 REGISTRATIONS_TABLE = os.environ.get("REGISTRATIONS_TABLE", "")
 
 
+def normalize_event_id(eid):
+    if not eid:
+        return ""
+    s = str(eid).strip()
+    if s == "evt-101":
+        return "evt-001"
+    if s == "evt-102":
+        return "evt-002"
+    return s
+
+
 def handler(event, context):
     events_table = dynamodb.Table(EVENTS_TABLE)
     try:
@@ -25,31 +36,30 @@ def handler(event, context):
             response = events_table.scan(ExclusiveStartKey=response["LastEvaluatedKey"])
             items.extend(response.get("Items", []))
 
-        # Ensure default events (evt-001 and evt-002) exist in DynamoDB table
-        existing_ids = {item.get("eventId") for item in items if item.get("eventId")}
-        default_events = [
-            {
-                "eventId": "evt-001",
-                "eventName": "AWS Workshop Accra 2026",
-                "date": "2026-08-15",
-                "location": "Accra Digital Center",
-                "capacity": 30,
-                "description": "Hands-on serverless workshop with AWS SAM and Lambda."
-            },
-            {
-                "eventId": "evt-002",
-                "eventName": "Cloud Native Kumasi Summit",
-                "date": "2026-08-20",
-                "location": "KNUST Tech Hub",
-                "capacity": 50,
-                "description": "Exploring Kubernetes, Serverless, and DevOps practices."
-            }
-        ]
-        for seed_evt in default_events:
-            if seed_evt["eventId"] not in existing_ids:
+        # Ensure default events (evt-001 and evt-002) exist in response
+        if not items:
+            default_events = [
+                {
+                    "eventId": "evt-001",
+                    "eventName": "AWS Workshop Accra 2026",
+                    "date": "2026-08-15",
+                    "location": "Accra Digital Center",
+                    "capacity": 30,
+                    "description": "Hands-on serverless workshop with AWS SAM and Lambda."
+                },
+                {
+                    "eventId": "evt-002",
+                    "eventName": "Cloud Native Kumasi Summit",
+                    "date": "2026-08-20",
+                    "location": "KNUST Tech Hub",
+                    "capacity": 50,
+                    "description": "Exploring Kubernetes, Serverless, and DevOps practices."
+                }
+            ]
+            items = list(default_events)
+            for seed_evt in default_events:
                 try:
                     events_table.put_item(Item=seed_evt)
-                    items.append(seed_evt)
                 except Exception:
                     pass
 
@@ -66,16 +76,6 @@ def handler(event, context):
                         ExclusiveStartKey=reg_response["LastEvaluatedKey"]
                     )
                     reg_items.extend(reg_response.get("Items", []))
-
-                def normalize_event_id(eid):
-                    if not eid:
-                        return ""
-                    s = str(eid).strip()
-                    if s == "evt-101":
-                        return "evt-001"
-                    if s == "evt-102":
-                        return "evt-002"
-                    return s
 
                 for reg in reg_items:
                     eid = normalize_event_id(reg.get("eventId"))
