@@ -682,16 +682,34 @@ class EventPulseApp {
 
     try {
       const targetUrl = this.apiUrl || HUB_API_URL;
-      const response = await fetch(`${targetUrl}/register`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          eventId, event_id: eventId, id: eventId,
-          providerId: this.selectedProviderId || undefined,
-          sourceEventId: this.selectedSourceEventId || undefined,
-          name, email
-        })
-      });
+      let response;
+      try {
+        response = await fetch(`${targetUrl}/register`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            eventId, event_id: eventId, id: eventId,
+            providerId: this.selectedProviderId || undefined,
+            sourceEventId: this.selectedSourceEventId || undefined,
+            name, email
+          })
+        });
+      } catch (directErr) {
+        if (targetUrl !== HUB_API_URL) {
+          response = await fetch(`${HUB_API_URL}/register`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              eventId, event_id: eventId, id: eventId,
+              providerId: this.selectedProviderId || undefined,
+              sourceEventId: this.selectedSourceEventId || undefined,
+              name, email
+            })
+          });
+        } else {
+          throw directErr;
+        }
+      }
 
       const result = unwrapApiPayload(await response.json());
       if (response.ok) {
