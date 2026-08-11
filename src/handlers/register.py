@@ -21,12 +21,90 @@ from utils.providers import ProviderError, register as register_with_provider
 
 dynamodb = boto3.resource("dynamodb")
 sns = boto3.client("sns")
+ses = boto3.client("ses")
 
 EVENTS_TABLE = os.environ["EVENTS_TABLE"]
 REGISTRATIONS_TABLE = os.environ["REGISTRATIONS_TABLE"]
 SNS_TOPIC_ARN = os.environ.get("SNS_TOPIC_ARN", "")
+SES_SENDER_EMAIL = os.environ.get("SES_SENDER_EMAIL", "")
 
 EMAIL_REGEX = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+
+
+def send_ses_confirmation(to_email, name, event_name, event_id, registration_id, event_date=""):
+    """Send a styled HTML confirmation email to the registrant via SES."""
+    if not SES_SENDER_EMAIL:
+        return
+    display_name = name or to_email
+    date_line = f'<tr><td style="padding:6px 12px;color:#6b7280;">Date</td><td style="padding:6px 12px;font-weight:600">{event_date}</td></tr>' if event_date else ""
+    html_body = f"""
+    <html>
+    <body style="margin:0;padding:0;background:#f3f4f6;font-family:'Segoe UI',Roboto,Arial,sans-serif">
+      <table width="100%" cellpadding="0" cellspacing="0" style="background:#f3f4f6;padding:32px 0">
+        <tr><td align="center">
+          <table width="560" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,.08)">
+            <!-- Header -->
+            <tr><td style="background:linear-gradient(135deg,#0d9488,#0891b2);padding:32px 40px;text-align:center">
+              <h1 style="margin:0;color:#ffffff;font-size:22px">🎉 Registration Confirmed!</h1>
+            </td></tr>
+            <!-- Body -->
+            <tr><td style="padding:32px 40px">
+              <p style="color:#1f2937;font-size:16px;line-height:1.6;margin-top:0">
+                Hello <strong>{display_name}</strong>,
+              </p>
+              <p style="color:#374151;font-size:15px;line-height:1.6">
+                Your spot has been secured! Here are your registration details:
+              </p>
+              <table width="100%" style="background:#f9fafb;border-radius:8px;margin:20px 0;border-collapse:collapse">
+                <tr><td style="padding:6px 12px;color:#6b7280;">Event</td><td style="padding:6px 12px;font-weight:600">{event_name}</td></tr>
+                <tr><td style="padding:6px 12px;color:#6b7280;">Event ID</td><td style="padding:6px 12px;font-family:monospace">{event_id}</td></tr>
+                {date_line}
+                <tr><td style="padding:6px 12px;color:#6b7280;">Ticket ID</td><td style="padding:6px 12px;font-family:monospace;font-size:13px">{registration_id}</td></tr>
+                <tr><td style="padding:6px 12px;color:#6b7280;">Status</td><td style="padding:6px 12px"><span style="background:#d1fae5;color:#065f46;padding:2px 10px;border-radius:12px;font-size:13px;font-weight:600">Confirmed ✓</span></td></tr>
+              </table>
+              <p style="color:#6b7280;font-size:13px;line-height:1.5">
+                Keep this email for your records. Present your Ticket ID at the event.
+              </p>
+            </td></tr>
+            <!-- Footer -->
+            <tr><td style="background:#f9fafb;padding:20px 40px;text-align:center;border-top:1px solid #e5e7eb">
+              <p style="color:#9ca3af;font-size:12px;margin:0">
+                Sent by Event-Connect · Universal Multi-API Event Manager
+              </p>
+            </td></tr>
+          </table>
+        </td></tr>
+      </table>
+    </body>
+    </html>
+    """
+
+    text_body = (
+        f"Hello {display_name},\n\n"
+        f"Your registration for '{event_name}' has been confirmed!\n\n"
+        f"--- Registration Details ---\n"
+        f"Event: {event_name}\n"
+        f"Event ID: {event_id}\n"
+        f"Ticket ID: {registration_id}\n"
+        f"Status: Confirmed\n\n"
+        f"Keep this email for your records.\n"
+        f"— Event-Connect"
+    )
+
+    try:
+        ses.send_email(
+            Source=SES_SENDER_EMAIL,
+            Destination={"ToAddresses": [to_email]},
+            Message={
+                "Subject": {"Data": f"🎉 Registration Confirmed — {event_name}", "Charset": "UTF-8"},
+                "Body": {
+                    "Text": {"Data": text_body, "Charset": "UTF-8"},
+                    "Html": {"Data": html_body, "Charset": "UTF-8"},
+                },
+            },
+        )
+    except Exception as ses_err:
+        print(f"SES Send Error: {ses_err}")
 
 
 def handler(event, context):
@@ -97,6 +175,14 @@ def handler(event, context):
             except Exception as sns_err:
                 print(f"SNS Publish Error: {sns_err}")
 
+        # SES confirmation email to the registrant
+        send_ses_confirmation(
+            to_email=email, name=name,
+            event_name=item.get("eventName") or event_id,
+            event_id=event_id,
+            registration_id=registration_id,
+        )
+
         return build_response(201, {
             "message": "Registration successful",
             "registration": item,
@@ -162,5 +248,15 @@ def handler(event, context):
             )
         except Exception as sns_err:
             print(f"SNS Publish Error: {sns_err}")
+
+    # SES confirmation email to the registrant
+    event_date = event_item.get("date", "") if event_item else ""
+    send_ses_confirmation(
+        to_email=email, name=name,
+        event_name=item.get("eventName") or event_id,
+        event_id=event_id,
+        registration_id=registration_id,
+        event_date=event_date,
+    )
 
     return build_response(201, {"message": "Registration successful", "registration": item})

@@ -18,6 +18,12 @@ Parameters:
     Description: >
       Email address to receive SNS confirmation emails and
       CloudWatch alarm notifications. Enabled by default.
+  SenderEmail:
+    Type: String
+    Default: "dogbeblessingkwame@gmail.com"
+    Description: >-
+      SES-verified sender email address used for confirmation emails
+      sent directly to registrants. Must be verified in SES.
   ProvidersJson:
     Type: String
     Default: '[]'
@@ -25,6 +31,7 @@ Parameters:
 
 Conditions:
   HasNotificationEmail: !Not [!Equals [!Ref NotificationEmail, ""]]
+  HasSenderEmail: !Not [!Equals [!Ref SenderEmail, ""]]
 
 # ---------------------------------------------------------------------------
 # GLOBALS - shared settings applied to every function
@@ -40,6 +47,7 @@ Globals:
         EVENTS_TABLE: !Ref EventsTable
         REGISTRATIONS_TABLE: !Ref RegistrationsTable
         SNS_TOPIC_ARN: !If [HasNotificationEmail, !Ref ConfirmationTopic, ""]
+        SES_SENDER_EMAIL: !If [HasSenderEmail, !Ref SenderEmail, ""]
         PROVIDERS_JSON: !Ref ProvidersJson
   Api:
     Cors:
@@ -123,6 +131,12 @@ Resources:
             - Effect: Allow
               Action: sns:Publish
               Resource: !If [HasNotificationEmail, !Ref ConfirmationTopic, !Sub "arn:aws:sns:${AWS::Region}:${AWS::AccountId}:no-topic"]
+        - Statement:
+            - Effect: Allow
+              Action:
+                - ses:SendEmail
+                - ses:SendRawEmail
+              Resource: "*"
       Events:
         RegisterApi:
           Type: Api
