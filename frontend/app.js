@@ -21,7 +21,11 @@ const DEFAULT_API_URL = HUB_API_URL;
 // ============================================================
 
 function normalizeApiUrl(value) {
-  return String(value || '').trim().replace(/[,\s]+$/, '').replace(/\/+$/, '');
+  let url = String(value || '').trim().replace(/[,\s]+$/, '').replace(/\/+$/, '');
+  if (url.includes('wd1cfi2292.execute-api.us-west-1.amazonaws.com/dev')) {
+    url = url.replace('/dev', '/Prod');
+  }
+  return url;
 }
 
 function unwrapApiPayload(payload) {
