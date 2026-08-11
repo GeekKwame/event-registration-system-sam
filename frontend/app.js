@@ -13,7 +13,7 @@ const STORAGE_KEY_API_URL = 'eventpulse_api_url';
 const STORAGE_KEY_LAST_EMAIL = 'eventpulse_last_registration_email';
 const STORAGE_KEY_LOCAL_REGS = 'eventpulse_local_registrations_store';
 
-const HUB_API_URL = 'https://wd1cfi2292.execute-api.us-west-1.amazonaws.com/dev';
+const HUB_API_URL = 'https://wd1cfi2292.execute-api.us-west-1.amazonaws.com/Prod';
 const DEFAULT_API_URL = HUB_API_URL;
 
 // ============================================================

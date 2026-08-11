@@ -249,7 +249,7 @@ Resources:
 Outputs:
   ApiUrl:
     Description: Base URL for the API Gateway stage
-    Value: !Sub "https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/${Stage}"
+    Value: !Sub "https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod"
   EventsTableName:
     Value: !Ref EventsTable
   RegistrationsTableName:
