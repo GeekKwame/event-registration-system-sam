@@ -20,7 +20,7 @@ Parameters:
       CloudWatch alarm notifications. Enabled by default.
   SenderEmail:
     Type: String
-    Default: "dogbeblessingkwame@gmail.com"
+    Default: "noreply@studentstudyplannerxyz.xyz"
     Description: >-
       SES-verified sender email address used for confirmation emails
       sent directly to registrants. Must be verified in SES.
