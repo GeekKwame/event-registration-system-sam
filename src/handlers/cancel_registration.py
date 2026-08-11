@@ -33,17 +33,15 @@ def handler(event, context):
         if items:
             existing = items[0]
 
-    # 3. If still not found, check if it's a direct provider registration ID
+    # 3. If still not found, try it as a namespaced provider id ("provider:remoteId")
     if not existing:
-        if "#" in registration_id or ":" in registration_id:
-            from utils.providers import get_providers
-            providers = get_providers()
-            for p in providers:
-                try:
-                    cancel_with_provider(p["id"], registration_id)
-                    return build_response(200, {"message": "Registration cancelled with provider", "registrationId": registration_id})
-                except Exception:
-                    pass
+        if ":" in registration_id:
+            provider_id, _, remote_id = registration_id.partition(":")
+            try:
+                cancel_with_provider(provider_id, remote_id)
+                return build_response(200, {"message": "Registration cancelled with provider", "registrationId": registration_id})
+            except ProviderError:
+                pass
         return error_response(404, f"Registration '{registration_id}' not found")
 
     # Cancel with provider if linked to an external system

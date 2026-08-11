@@ -32,6 +32,13 @@ def handler(event, context):
                 KeyConditionExpression=Key("email").eq(email),
             )
             items.extend(response.get("Items", []))
+            while "LastEvaluatedKey" in response:
+                response = table.query(
+                    IndexName="EmailIndex",
+                    KeyConditionExpression=Key("email").eq(email),
+                    ExclusiveStartKey=response["LastEvaluatedKey"],
+                )
+                items.extend(response.get("Items", []))
 
         # Collect known IDs (both local registrationId and providerRegistrationId)
         known_ids = set()

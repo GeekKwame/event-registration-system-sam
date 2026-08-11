@@ -36,12 +36,21 @@ function getLocalRegistrations() {
   catch { return []; }
 }
 
+function currentApiKey() {
+  return normalizeApiUrl(localStorage.getItem(STORAGE_KEY_API_URL) || '');
+}
+
 function saveLocalRegistration(reg) {
   const regs = getLocalRegistrations();
   if (!regs.some(r => r.registrationId === reg.registrationId)) {
-    regs.push(reg);
+    regs.push({ ...reg, apiUrl: currentApiKey() });
     localStorage.setItem(STORAGE_KEY_LOCAL_REGS, JSON.stringify(regs));
   }
+}
+
+/** Cached registrations made against the currently connected API only ('' = demo mode). */
+function localRegistrationsForCurrentApi() {
+  return getLocalRegistrations().filter(r => normalizeApiUrl(r.apiUrl || '') === currentApiKey());
 }
 
 function removeLocalRegistration(regId) {
@@ -64,6 +73,8 @@ function reconcileLocalRegistrations(remoteRegs) {
     })
   );
   const kept = getLocalRegistrations().filter(r => {
+    // Never prune another API's cache — evt ids like "evt-001" repeat across APIs.
+    if (normalizeApiUrl(r.apiUrl || '') !== currentApiKey()) return true;
     const id = String(r.registrationId || r.registration_id || r.id || '').trim();
     if (id && remoteIds.has(id)) return false;
     const key = `${String(r.email || '').toLowerCase()}|${String(r.eventId || r.event_id || r.sourceEventId || '').trim()}`;
@@ -402,6 +413,7 @@ class EventPulseApp {
 
     if (!this.apiUrl) {
       this.updateStatusBadge('disconnected', 'Demo Mode');
+      this.events = MOCK_EVENTS;
       this.renderEvents(MOCK_EVENTS);
       return;
     }
@@ -428,6 +440,7 @@ class EventPulseApp {
     if (!this.apiUrl) {
       setTimeout(() => {
         this.eventsLoading.classList.add('hidden');
+        this.events = MOCK_EVENTS;
         this.renderEvents(MOCK_EVENTS);
       }, 300);
       return;
@@ -755,7 +768,7 @@ class EventPulseApp {
         // Merge in whatever the user has actually registered for locally
         // in this session — otherwise demo-mode sign-ups vanished from
         // "My Registrations" the moment you switched tabs.
-        const localRegs = getLocalRegistrations();
+        const localRegs = localRegistrationsForCurrentApi();
         const seen = new Set();
         this.allRegistrations = [...localRegs, ...mockRegs].filter(r => {
           const id = r.registrationId || r.registration_id || r.id;
@@ -777,7 +790,7 @@ class EventPulseApp {
         if (resAll.ok) {
           const dataAll = unwrapApiPayload(await resAll.json());
           remoteRegs = Array.isArray(dataAll) ? dataAll : (dataAll.registrations || dataAll.data || dataAll.items || dataAll.results || []);
-          if (dataAll && dataAll.email) parentEmail = dataAll.email;
+          if (dataAll && dataAll.email && dataAll.email !== 'all') parentEmail = dataAll.email;
         }
       } catch (e) {
         console.warn('Could not fetch /registrations/all:', e);
@@ -805,7 +818,7 @@ class EventPulseApp {
       // rows. Previously, as soon as the API returned *any* registrations,
       // local-only entries (e.g. a registration just submitted, before the
       // backend index caught up) were silently dropped from the list.
-      const localRegs = getLocalRegistrations();
+      const localRegs = localRegistrationsForCurrentApi();
       const combinedMap = new Map();
       [...remoteRegs, ...localRegs].forEach(item => {
         const id = String(item.registrationId || item.registration_id || item.id || '').trim();
