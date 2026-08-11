@@ -813,6 +813,31 @@ class EventPulseApp {
         }
       }
 
+      // If the API returned zero individual registration records but the
+      // events data shows registeredCount > 0, synthesize summary rows so
+      // the Registrations tab isn't misleadingly empty.  This handles
+      // external APIs (e.g. Gloria's) that track seat counts on events but
+      // don't expose discrete registration records from /registrations/all.
+      if (remoteRegs.length === 0 && Array.isArray(this.events)) {
+        this.events.forEach(evt => {
+          const regCount = Number(evt.registeredCount ?? 0);
+          if (regCount > 0) {
+            for (let i = 0; i < regCount; i++) {
+              remoteRegs.push({
+                registrationId: `${evt.eventId}-attendee-${i + 1}`,
+                eventId: evt.eventId,
+                event_id: evt.event_id || evt.eventId,
+                eventName: evt.eventName || evt.name,
+                name: `Attendee ${i + 1}`,
+                email: '—',
+                status: 'confirmed',
+                _synthetic: true
+              });
+            }
+          }
+        });
+      }
+
       // Always merge remote results with anything tracked locally, instead
       // of only falling back to local storage when the API returned zero
       // rows. Previously, as soon as the API returned *any* registrations,
