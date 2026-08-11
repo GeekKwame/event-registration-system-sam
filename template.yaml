@@ -24,6 +24,12 @@ Parameters:
     Description: >-
       SES-verified sender email address used for confirmation emails
       sent directly to registrants. Must be verified in SES.
+  ResendApiKey:
+    Type: String
+    Default: ""
+    Description: >-
+      Optional Resend API key for instant email delivery to any recipient
+      without recipient verification in SES sandbox mode.
   ProvidersJson:
     Type: String
     Default: '[]'
@@ -48,6 +54,7 @@ Globals:
         REGISTRATIONS_TABLE: !Ref RegistrationsTable
         SNS_TOPIC_ARN: !If [HasNotificationEmail, !Ref ConfirmationTopic, ""]
         SES_SENDER_EMAIL: !If [HasSenderEmail, !Ref SenderEmail, ""]
+        RESEND_API_KEY: !Ref ResendApiKey
         PROVIDERS_JSON: !Ref ProvidersJson
   Api:
     Cors:

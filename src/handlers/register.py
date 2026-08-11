@@ -19,6 +19,8 @@ import boto3
 from utils.response import build_response, error_response
 from utils.providers import ProviderError, register as register_with_provider
 
+import urllib.request
+
 dynamodb = boto3.resource("dynamodb")
 sns = boto3.client("sns")
 ses = boto3.client("ses")
@@ -27,14 +29,43 @@ EVENTS_TABLE = os.environ["EVENTS_TABLE"]
 REGISTRATIONS_TABLE = os.environ["REGISTRATIONS_TABLE"]
 SNS_TOPIC_ARN = os.environ.get("SNS_TOPIC_ARN", "")
 SES_SENDER_EMAIL = os.environ.get("SES_SENDER_EMAIL", "")
+RESEND_API_KEY = os.environ.get("RESEND_API_KEY", "")
 
 EMAIL_REGEX = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
 
+def send_resend_email(to_email, subject, html_body, text_body):
+    """Send transactional email via Resend API (instant delivery, no recipient sandbox restrictions)."""
+    if not RESEND_API_KEY:
+        return False
+    try:
+        sender_addr = f"Event-Connect <{SES_SENDER_EMAIL}>" if (SES_SENDER_EMAIL and "@studentstudyplannerxyz.xyz" in SES_SENDER_EMAIL) else "Event-Connect <onboarding@resend.dev>"
+        payload = json.dumps({
+            "from": sender_addr,
+            "to": [to_email],
+            "subject": subject,
+            "html": html_body,
+            "text": text_body,
+        }).encode("utf-8")
+        req = urllib.request.Request(
+            "https://api.resend.com/emails",
+            data=payload,
+            headers={
+                "Authorization": f"Bearer {RESEND_API_KEY}",
+                "Content-Type": "application/json",
+            },
+            method="POST",
+        )
+        with urllib.request.urlopen(req) as resp:
+            print("Resend email sent successfully:", resp.status)
+            return True
+    except Exception as exc:
+        print(f"Resend API Error: {exc}")
+        return False
+
+
 def send_ses_confirmation(to_email, name, event_name, event_id, registration_id, event_date=""):
-    """Send a styled HTML confirmation email to the registrant via SES."""
-    if not SES_SENDER_EMAIL:
-        return
+    """Send a styled HTML confirmation email to the registrant via SES, falling back to Resend if unverified."""
     display_name = name or to_email
     date_line = f'<tr><td style="padding:6px 12px;color:#6b7280;">Date</td><td style="padding:6px 12px;font-weight:600">{event_date}</td></tr>' if event_date else ""
     html_body = f"""
@@ -91,20 +122,29 @@ def send_ses_confirmation(to_email, name, event_name, event_id, registration_id,
         f"— Event-Connect"
     )
 
-    try:
-        ses.send_email(
-            Source=SES_SENDER_EMAIL,
-            Destination={"ToAddresses": [to_email]},
-            Message={
-                "Subject": {"Data": f"🎉 Registration Confirmed — {event_name}", "Charset": "UTF-8"},
-                "Body": {
-                    "Text": {"Data": text_body, "Charset": "UTF-8"},
-                    "Html": {"Data": html_body, "Charset": "UTF-8"},
+    subject = f"🎉 Registration Confirmed — {event_name}"
+
+    # 1. Primary: Try AWS SES
+    if SES_SENDER_EMAIL:
+        try:
+            ses.send_email(
+                Source=SES_SENDER_EMAIL,
+                Destination={"ToAddresses": [to_email]},
+                Message={
+                    "Subject": {"Data": subject, "Charset": "UTF-8"},
+                    "Body": {
+                        "Text": {"Data": text_body, "Charset": "UTF-8"},
+                        "Html": {"Data": html_body, "Charset": "UTF-8"},
+                    },
                 },
-            },
-        )
-    except Exception as ses_err:
-        print(f"SES Send Error: {ses_err}")
+            )
+            print("SES Email dispatched successfully to:", to_email)
+            return
+        except Exception as ses_err:
+            print(f"SES Send Error: {ses_err}. Trying Resend API fallback...")
+
+    # 2. Fallback: Resend API
+    send_resend_email(to_email, subject, html_body, text_body)
 
 
 def handler(event, context):
