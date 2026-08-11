@@ -1054,7 +1054,6 @@ class EventPulseApp {
     toast.innerHTML = `${icon}<span>${this.escapeHtml(message)}</span>`;
 
     container.appendChild(toast);
-
     setTimeout(() => {
       toast.style.opacity = '0';
       toast.style.transform = 'translateY(12px) scale(0.96)';
