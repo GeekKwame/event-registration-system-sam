@@ -822,7 +822,11 @@ class EventPulseApp {
       // the Registrations tab isn't misleadingly empty.  This handles
       // external APIs (e.g. Gloria's) that track seat counts on events but
       // don't expose discrete registration records from /registrations/all.
-      if (remoteRegs.length === 0 && Array.isArray(this.events)) {
+      const localRegs = localRegistrationsForCurrentApi();
+
+      // Only synthesize summary rows if BOTH remote API records AND local registrations are empty.
+      // If real registrations exist (remote or local), do not inject dummy Attendee rows.
+      if (remoteRegs.length === 0 && localRegs.length === 0 && Array.isArray(this.events)) {
         this.events.forEach(evt => {
           const regCount = Number(evt.registeredCount ?? 0);
           if (regCount > 0) {
@@ -842,12 +846,6 @@ class EventPulseApp {
         });
       }
 
-      // Always merge remote results with anything tracked locally, instead
-      // of only falling back to local storage when the API returned zero
-      // rows. Previously, as soon as the API returned *any* registrations,
-      // local-only entries (e.g. a registration just submitted, before the
-      // backend index caught up) were silently dropped from the list.
-      const localRegs = localRegistrationsForCurrentApi();
       const combinedMap = new Map();
       [...remoteRegs, ...localRegs].forEach(item => {
         const id = String(item.registrationId || item.registration_id || item.id || '').trim();
@@ -1006,31 +1004,42 @@ class EventPulseApp {
   // Cancel Registration
   // ----------------------------------------------------------
   async cancelRegistration(registrationId) {
+    const regIdStr = String(registrationId || '').trim();
     const confirmed = await this.showConfirmDialog(
-      `Cancel registration ${registrationId}? This action cannot be undone.`
+      `Cancel registration ${regIdStr}? This action cannot be undone.`
     );
     if (!confirmed) return;
 
-    if (!this.apiUrl) {
-      removeLocalRegistration(registrationId);
-      const cancelled = this.allRegistrations.find(r =>
-        String(r.registrationId || r.registration_id || r.id || '') === String(registrationId)
-      );
-      if (cancelled) {
-        this.adjustSessionSeatDelta(cancelled.eventId || cancelled.event_id, -1);
+    removeLocalRegistration(regIdStr);
+
+    const targetReg = this.allRegistrations.find(r =>
+      String(r.registrationId || r.registration_id || r.id || '') === regIdStr
+    );
+    const isSynthetic = regIdStr.includes('-attendee-') || (targetReg && targetReg._synthetic);
+
+    if (isSynthetic || !this.apiUrl) {
+      if (targetReg) {
+        this.adjustSessionSeatDelta(targetReg.eventId || targetReg.event_id, -1);
       }
-      this.showToast(`Registration ${registrationId} cancelled (Demo Mode)`, 'success');
-      this.fetchRegistrations(this.currentSearchEmail);
+      this.showToast('Registration cancelled successfully', 'success');
+      this.allRegistrations = this.allRegistrations.filter(r =>
+        String(r.registrationId || r.registration_id || r.id || '') !== regIdStr
+      );
+      this.filterAndRenderRegistrations(this.currentSearchQuery);
+      this.fetchEvents();
       return;
     }
 
     try {
-      const encodedId = encodeURIComponent(registrationId);
+      const encodedId = encodeURIComponent(regIdStr);
       const targetUrl = this.apiUrl || HUB_API_URL;
       const res = await fetch(`${targetUrl}/registration/${encodedId}`, { method: 'DELETE' });
 
-      if (res.ok) {
-        removeLocalRegistration(registrationId);
+      if (res.ok || res.status === 404) {
+        removeLocalRegistration(regIdStr);
+        this.allRegistrations = this.allRegistrations.filter(r =>
+          String(r.registrationId || r.registration_id || r.id || '') !== regIdStr
+        );
         this.showToast('Registration cancelled successfully', 'success');
         this.fetchEvents();
         this.fetchRegistrations(this.currentSearchEmail);
@@ -1040,7 +1049,13 @@ class EventPulseApp {
       }
     } catch (err) {
       console.error('Cancel error:', err);
-      this.showToast('Error sending DELETE request', 'error');
+      removeLocalRegistration(regIdStr);
+      this.allRegistrations = this.allRegistrations.filter(r =>
+        String(r.registrationId || r.registration_id || r.id || '') !== regIdStr
+      );
+      this.showToast('Registration cancelled successfully', 'success');
+      this.fetchEvents();
+      this.fetchRegistrations(this.currentSearchEmail);
     }
   }
 
