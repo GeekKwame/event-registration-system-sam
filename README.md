@@ -34,6 +34,8 @@ When event organizers use basic online forms and manual Excel spreadsheets, thre
 
 ## 🏛️ How It Works (Architecture Overview)
 
+![AWS Serverless Event Registration Architecture Diagram](docs/architecture.png)
+
 ```
 ┌────────────────────────────────┐       ┌────────────────────────┐       ┌────────────────────────┐
 │  Universal Web Dashboard (UI)  │ ────► │    AWS API Gateway     │ ────► │  AWS Lambda Handlers   │

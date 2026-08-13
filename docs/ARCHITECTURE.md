@@ -4,6 +4,12 @@ This document details the complete serverless architecture for the **Event Regis
 
 ---
 
+## 🖼️ Official AWS Serverless Architecture Diagram
+
+![AWS Serverless Event Registration Architecture Diagram](architecture.png)
+
+---
+
 ## 📐 High-Level Architecture Overview
 
 ```

@@ -29,6 +29,8 @@ Event-Connect is a production-ready, serverless event ticketing system built on 
 
 ## 🏛️ 2. AWS Serverless Architecture & Components
 
+![AWS Serverless Event Registration Architecture Diagram](architecture.png)
+
 ```
 ┌────────────────────────────────┐       ┌────────────────────────┐       ┌────────────────────────┐
 │  Universal Web Dashboard (UI)  │ ────► │    AWS API Gateway     │ ────► │  AWS Lambda Handlers   │
