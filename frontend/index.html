@@ -123,22 +123,22 @@
       <section id="section-my-registrations" class="tab-content hidden" role="tabpanel" aria-labelledby="tab-my-registrations">
         <div class="section-header">
           <div>
-            <h2>Your registrations</h2>
-            <p class="section-desc">Look up tickets by the email used at registration. Full attendee lists are not public.</p>
+            <h2>Registrations</h2>
+            <p class="section-desc">All confirmed attendees. Filter by the email used at registration.</p>
           </div>
         </div>
 
         <div class="search-card">
           <form id="form-search-email" class="search-form">
             <div class="form-group flex-1">
-              <label for="search-email-input">Email address</label>
+              <label for="search-email-input">Filter by email</label>
               <input type="email" id="search-email-input" placeholder="you@example.com" autocomplete="email" spellcheck="false">
             </div>
             <button type="submit" class="btn btn-primary" id="btn-search-email">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
-              Find tickets
+              Filter
             </button>
-            <button type="button" class="btn btn-secondary" id="btn-clear-search">Clear</button>
+            <button type="button" class="btn btn-secondary" id="btn-clear-search">Show all</button>
           </form>
         </div>
 
@@ -154,7 +154,7 @@
         <div id="regs-empty" class="empty-state hidden">
           <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
           <h3>No registrations found</h3>
-          <p>Enter the email you registered with to see your tickets.</p>
+          <p>No registrations yet. Register from the Events tab to see attendees here.</p>
         </div>
       </section>
     </main>

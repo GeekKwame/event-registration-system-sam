@@ -257,6 +257,12 @@ Resources:
         - DynamoDBReadPolicy:
             TableName: !Ref RegistrationsTable
       Events:
+        ListRegistrationsApi:
+          Type: Api
+          Properties:
+            RestApiId: !Ref EventApi
+            Path: /registrations
+            Method: get
         GetRegistrationsApi:
           Type: Api
           Properties:

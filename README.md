@@ -28,7 +28,7 @@ Browser
 - Frontend calls same-origin paths only: `/api/events`, `/api/register`, `/api/registrations/{email}`, `/api/registration/{id}`
 - CloudFront strips `/api`, injects the origin secret, and forwards to API Gateway
 - WAF and Lambda reject any request missing that secret
-- `/registrations/all` is disabled so attendee PII cannot be dumped
+- `GET /api/registrations` lists attendees for the dashboard; `GET /api/registrations/{email}` filters by attendee
 
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
@@ -88,7 +88,8 @@ python -m pytest tests/ -v
 |---|---|---|
 | GET | `/api/events` | Catalog with live seat counts |
 | POST | `/api/register` | Rejects duplicates and full events |
-| GET | `/api/registrations/{email}` | That attendee only — valid email required |
+| GET | `/api/registrations` | All confirmed attendees |
+| GET | `/api/registrations/{email}` | Filter by attendee email |
 | DELETE | `/api/registration/{id}` | Cancel a ticket |
 
 ---

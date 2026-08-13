@@ -120,9 +120,7 @@ class EventPulseApp {
 
     this.btnClearSearch.addEventListener('click', () => {
       this.searchEmailInput.value = '';
-      this.currentSearchEmail = '';
-      this.allRegistrations = [];
-      this.renderRegistrations([]);
+      this.fetchRegistrations('');
     });
 
     this.btnConfirmYes.addEventListener('click', () => this.closeConfirmDialog(true));
@@ -155,8 +153,7 @@ class EventPulseApp {
       targetSection.classList.add('active');
     }
     if (targetSectionId === 'section-my-registrations') {
-      const email = (this.searchEmailInput.value || '').trim();
-      if (email.includes('@')) this.fetchRegistrations(email);
+      this.fetchRegistrations((this.searchEmailInput.value || '').trim());
     }
   }
 
@@ -346,6 +343,7 @@ class EventPulseApp {
       this.searchEmailInput.value = email;
       this.showToast(`Registration confirmed. Ticket ${regId}`, 'success');
       this.fetchEvents();
+      this.fetchRegistrations(email);
     } catch (err) {
       this.showToast(err.message || 'Registration failed', 'error');
     }
@@ -358,15 +356,11 @@ class EventPulseApp {
     this.regsList.classList.add('hidden');
     this.regsEmpty.classList.add('hidden');
 
-    if (!email.includes('@')) {
-      this.regsLoading.classList.add('hidden');
-      this.allRegistrations = [];
-      this.renderRegistrations([]);
-      return;
-    }
-
     try {
-      const data = await apiFetch(`/registrations/${encodeURIComponent(email)}`);
+      const path = email.includes('@')
+        ? `/registrations/${encodeURIComponent(email)}`
+        : '/registrations';
+      const data = await apiFetch(path);
       this.allRegistrations = Array.isArray(data) ? data : (data.registrations || []);
       this.renderRegistrations(this.allRegistrations, email);
     } catch (err) {
@@ -443,7 +437,7 @@ class EventPulseApp {
       await apiFetch(`/registration/${encodeURIComponent(registrationId)}`, { method: 'DELETE' });
       this.showToast('Registration cancelled', 'success');
       this.fetchEvents();
-      if (this.currentSearchEmail) this.fetchRegistrations(this.currentSearchEmail);
+      this.fetchRegistrations(this.currentSearchEmail);
     } catch (err) {
       this.showToast(err.message || 'Failed to cancel', 'error');
     }

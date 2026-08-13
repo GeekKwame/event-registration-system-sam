@@ -211,10 +211,24 @@ def test_register_rejects_when_event_is_full(dynamodb_tables):
     assert second["statusCode"] == 409
 
 
-def test_get_registrations_rejects_all_dump(dynamodb_tables):
+def test_get_registrations_lists_all_when_no_email(dynamodb_tables):
+    register = _reload("register")
     get_registrations = _reload("get_registrations")
+    register.handler({"body": json.dumps({"eventId": "evt-001", "email": "one@example.com", "name": "One"})}, None)
+    register.handler({"body": json.dumps({"eventId": "evt-001", "email": "two@example.com", "name": "Two"})}, None)
+    result = get_registrations.handler({"pathParameters": None}, None)
+    body = json.loads(result["body"])
+    assert result["statusCode"] == 200
+    assert body["count"] == 2
+
+
+def test_get_registrations_all_alias_lists_everyone(dynamodb_tables):
+    register = _reload("register")
+    get_registrations = _reload("get_registrations")
+    register.handler({"body": json.dumps({"eventId": "evt-001", "email": "one@example.com"})}, None)
     result = get_registrations.handler({"pathParameters": {"email": "all"}}, None)
-    assert result["statusCode"] == 400
+    assert result["statusCode"] == 200
+    assert json.loads(result["body"])["count"] == 1
 
 
 def test_resend_key_is_read_from_secrets_manager(dynamodb_tables, monkeypatch):
