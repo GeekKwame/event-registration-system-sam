@@ -1,6 +1,7 @@
 """
-Shared helper for building consistent, CORS-friendly API Gateway responses.
-Every Lambda handler imports this so the response shape never drifts.
+Shared helper for building consistent API Gateway JSON responses.
+CORS is not required for same-origin CloudFront traffic; headers are kept
+narrow for sam local and non-browser clients.
 """
 import json
 import decimal
@@ -19,9 +20,7 @@ def build_response(status_code: int, body: dict) -> dict:
         "statusCode": status_code,
         "headers": {
             "Content-Type": "application/json",
-            "Access-Control-Allow-Origin": "*",
-            "Access-Control-Allow-Headers": "Content-Type,Authorization",
-            "Access-Control-Allow-Methods": "GET,POST,DELETE,OPTIONS",
+            "Cache-Control": "no-store",
         },
         "body": json.dumps(body, cls=DecimalEncoder),
     }

@@ -3,8 +3,8 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="description" content="Event-Connect — Universal Multi-API Event Manager & Ticketing Integration Hub across AWS Regions.">
-  <title>Event-Connect — Universal Multi-API Event Manager</title>
+  <meta name="description" content="Event-Connect — serverless event registration served through Amazon CloudFront.">
+  <title>Event-Connect — Event Registration</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -27,8 +27,8 @@
           </svg>
         </div>
         <div>
-          <h1 class="brand-title">Event-Connect <span class="badge-aws">Universal Hub</span></h1>
-          <p class="brand-subtitle">Connect, monitor & register attendees across AWS multi-region APIs</p>
+          <h1 class="brand-title">Event-Connect <span class="badge-aws">Ticketing</span></h1>
+          <p class="brand-subtitle">Browse events, reserve a seat, and manage your registration</p>
         </div>
       </div>
       <div class="header-actions">
@@ -39,34 +39,6 @@
       </div>
     </header>
 
-    <!-- API Config & Quick-Connect -->
-    <section class="api-config-banner" id="api-config-section" aria-label="API Configuration">
-      <div class="config-content">
-        <div class="config-info">
-          <svg class="config-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
-            <path d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9"/>
-          </svg>
-          <span class="config-label">API Gateway:</span>
-        </div>
-        <div class="config-input-group">
-          <input type="url" id="api-url-input" placeholder="https://your-api.execute-api.region.amazonaws.com/Prod" autocomplete="off" spellcheck="false" aria-label="API Gateway endpoint URL">
-          <button id="btn-save-api-url" class="btn btn-secondary">Connect</button>
-        </div>
-      </div>
-
-      <div class="quick-connect-bar" role="group" aria-label="Quick connect API presets">
-        <span class="quick-connect-title">API Presets:</span>
-        <button type="button" class="btn-preset active" id="preset-my-api" data-url="https://wd1cfi2292.execute-api.us-west-1.amazonaws.com/Prod">
-          🟢 My Primary API (us-west-1)
-        </button>
-        <button type="button" class="btn-preset" id="preset-gloria-api" data-url="https://djabididt6.execute-api.us-east-1.amazonaws.com">
-          🟣 Gloria's API (us-east-1)
-        </button>
-        <button type="button" class="btn-preset" id="preset-dawuni-api" data-url="https://mmrq6ebalh.execute-api.us-east-1.amazonaws.com">
-          🔵 Dawuni's API (us-east-1)
-        </button>
-      </div>
-    </section>
 
     <!-- Navigation Tabs -->
     <nav class="nav-tabs" role="tablist" aria-label="Main navigation">
@@ -89,12 +61,12 @@
         <section class="hero-panel" aria-label="Dashboard overview">
           <div class="hero-copy">
             <p class="eyebrow"><span class="live-pulse" aria-hidden="true"></span> Event Hub</p>
-            <h2 id="hero-title">Manage events & registrations across any AWS region.</h2>
-            <p>Normalize external APIs into one canonical view — full control over seats and attendees.</p>
+            <h2 id="hero-title">Find an event and lock in your seat.</h2>
+            <p>Live capacity, duplicate protection, and email confirmation — served through Amazon CloudFront.</p>
             <div class="hero-proof">
-              <span>✓ Multi-API Integration</span>
-              <span>✓ Cross-System Registration</span>
-              <span>✓ Live SNS Alerts</span>
+              <span>✓ CloudFront HTTPS</span>
+              <span>✓ Private API origin</span>
+              <span>✓ SNS confirmations</span>
             </div>
           </div>
           <div class="capacity-orbit" aria-label="Live capacity snapshot">
@@ -120,7 +92,7 @@
         <div class="section-header">
           <div>
             <h2>Event Catalog</h2>
-            <p class="section-desc">Browse live events aggregated across connected API Gateways.</p>
+            <p class="section-desc">Browse live events and remaining seats.</p>
           </div>
           <button id="btn-refresh-events" class="btn btn-icon" aria-label="Refresh events">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
@@ -131,7 +103,7 @@
         <!-- Loading State -->
         <div id="events-loading" class="loading-spinner-container" aria-live="polite">
           <div class="spinner" aria-hidden="true"></div>
-          <p>Fetching events from API Gateway…</p>
+          <p>Fetching events…</p>
         </div>
 
         <!-- Events Grid -->
@@ -143,7 +115,7 @@
         <div id="events-empty" class="empty-state hidden">
           <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"/></svg>
           <h3>No events found</h3>
-          <p id="events-empty-message">Connect an API endpoint or check your network connection to load events.</p>
+          <p id="events-empty-message">No events are available right now. Try again in a moment.</p>
         </div>
       </section>
 
@@ -151,22 +123,22 @@
       <section id="section-my-registrations" class="tab-content hidden" role="tabpanel" aria-labelledby="tab-my-registrations">
         <div class="section-header">
           <div>
-            <h2>Registrations</h2>
-            <p class="section-desc">View all registered attendees. Search by email, name, or event ID.</p>
+            <h2>Your registrations</h2>
+            <p class="section-desc">Look up tickets by the email used at registration. Full attendee lists are not public.</p>
           </div>
         </div>
 
         <div class="search-card">
           <form id="form-search-email" class="search-form">
             <div class="form-group flex-1">
-              <label for="search-email-input">Search registrations</label>
-              <input type="text" id="search-email-input" placeholder="Email, name, or event ID…" autocomplete="off" spellcheck="false">
+              <label for="search-email-input">Email address</label>
+              <input type="email" id="search-email-input" placeholder="you@example.com" autocomplete="email" spellcheck="false">
             </div>
             <button type="submit" class="btn btn-primary" id="btn-search-email">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
-              Search
+              Find tickets
             </button>
-            <button type="button" class="btn btn-secondary" id="btn-clear-search">Show All</button>
+            <button type="button" class="btn btn-secondary" id="btn-clear-search">Clear</button>
           </form>
         </div>
 
@@ -182,7 +154,7 @@
         <div id="regs-empty" class="empty-state hidden">
           <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
           <h3>No registrations found</h3>
-          <p>No active registrations matched the search. Try another query or click "Show All".</p>
+          <p>Enter the email you registered with to see your tickets.</p>
         </div>
       </section>
     </main>

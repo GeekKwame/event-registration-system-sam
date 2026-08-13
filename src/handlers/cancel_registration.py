@@ -5,6 +5,7 @@ Cancels (deletes) a single registration by its registrationId.
 import os
 import boto3
 from utils.response import build_response, error_response
+from utils.security import require_cloudfront_origin
 from utils.providers import ProviderError, cancel as cancel_with_provider
 
 dynamodb = boto3.resource("dynamodb")
@@ -12,6 +13,10 @@ REGISTRATIONS_TABLE = os.environ["REGISTRATIONS_TABLE"]
 
 
 def handler(event, context):
+    denied = require_cloudfront_origin(event)
+    if denied:
+        return denied
+
     path_params = event.get("pathParameters") or {}
     registration_id = (path_params.get("id") or "").strip()
 

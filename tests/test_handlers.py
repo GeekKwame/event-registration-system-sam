@@ -29,6 +29,8 @@ def dynamodb_tables():
     os.environ["REGISTRATIONS_TABLE"] = REGISTRATIONS_TABLE
     os.environ["SNS_TOPIC_ARN"] = ""
     os.environ["PROVIDERS_JSON"] = "[]"
+    os.environ["ORIGIN_VERIFY_SECRET"] = ""
+    os.environ["RESEND_SECRET_ARN"] = ""
     os.environ.setdefault("AWS_DEFAULT_REGION", "us-east-1")
     os.environ.setdefault("AWS_ACCESS_KEY_ID", "testing")
     os.environ.setdefault("AWS_SECRET_ACCESS_KEY", "testing")
@@ -187,4 +189,89 @@ def test_provider_adapter_headers_and_region(monkeypatch):
     assert events[0]["eventId"] == "eu-events:99"
     assert events[0]["region"] == "eu-west-1"
     assert captured_headers.get("X-api-key") == "secret-key" or captured_headers.get("X-API-Key") == "secret-key"
+
+
+def test_register_duplicate_email_rejected(dynamodb_tables):
+    register = _reload("register")
+    event = {"body": json.dumps({"eventId": "evt-001", "email": "friend@example.com", "name": "Friend"})}
+    first = register.handler(event, None)
+    second = register.handler(event, None)
+    assert first["statusCode"] == 201
+    assert second["statusCode"] == 409
+
+
+def test_register_rejects_when_event_is_full(dynamodb_tables):
+    dynamodb_tables.Table(EVENTS_TABLE).put_item(
+        Item={"eventId": "evt-full", "eventName": "Packed Hall", "capacity": 1, "date": "2026-01-02"}
+    )
+    register = _reload("register")
+    first = register.handler({"body": json.dumps({"eventId": "evt-full", "email": "one@example.com"})}, None)
+    second = register.handler({"body": json.dumps({"eventId": "evt-full", "email": "two@example.com"})}, None)
+    assert first["statusCode"] == 201
+    assert second["statusCode"] == 409
+
+
+def test_get_registrations_rejects_all_dump(dynamodb_tables):
+    get_registrations = _reload("get_registrations")
+    result = get_registrations.handler({"pathParameters": {"email": "all"}}, None)
+    assert result["statusCode"] == 400
+
+
+def test_resend_key_is_read_from_secrets_manager(dynamodb_tables, monkeypatch):
+    monkeypatch.setenv("RESEND_SECRET_ARN", "arn:aws:secretsmanager:us-west-1:1234:secret:resend")
+    register = _reload("register")
+
+    calls = []
+
+    class FakeSecrets:
+        def get_secret_value(self, SecretId):
+            calls.append(SecretId)
+            return {"SecretString": json.dumps({"apiKey": "re_live_key"})}
+
+    monkeypatch.setattr(register.boto3, "client", lambda service, *a, **kw: FakeSecrets())
+
+    assert register.get_resend_api_key() == "re_live_key"
+    # Cached after the first read so every registration does not hit Secrets Manager.
+    assert register.get_resend_api_key() == "re_live_key"
+    assert len(calls) == 1
+
+
+def test_resend_placeholder_secret_disables_sending(dynamodb_tables, monkeypatch):
+    monkeypatch.setenv("RESEND_SECRET_ARN", "arn:aws:secretsmanager:us-west-1:1234:secret:resend")
+    register = _reload("register")
+
+    class FakeSecrets:
+        def get_secret_value(self, SecretId):
+            return {"SecretString": json.dumps({"apiKey": "GeneratedPlaceholderValue"})}
+
+    monkeypatch.setattr(register.boto3, "client", lambda service, *a, **kw: FakeSecrets())
+
+    assert register.get_resend_api_key() == ""
+
+
+def test_resend_key_is_picked_up_without_redeploy(dynamodb_tables, monkeypatch):
+    """A rotated key must apply on the next invocation, not the next cold start."""
+    monkeypatch.setenv("RESEND_SECRET_ARN", "arn:aws:secretsmanager:us-west-1:1234:secret:resend")
+    register = _reload("register")
+
+    stored = {"apiKey": "PlaceholderNotARealKey"}
+
+    class FakeSecrets:
+        def get_secret_value(self, SecretId):
+            return {"SecretString": json.dumps(stored)}
+
+    monkeypatch.setattr(register.boto3, "client", lambda service, *a, **kw: FakeSecrets())
+
+    assert register.get_resend_api_key() == ""
+    stored["apiKey"] = "re_rotated_key"
+    assert register.get_resend_api_key() == "re_rotated_key"
+
+
+def test_origin_verify_rejects_direct_api_access(dynamodb_tables, monkeypatch):
+    monkeypatch.setenv("ORIGIN_VERIFY_SECRET", "cloudfront-origin-token")
+    list_events = _reload("list_events")
+    denied = list_events.handler({"headers": {}}, None)
+    allowed = list_events.handler({"headers": {"X-Origin-Verify": "cloudfront-origin-token"}}, None)
+    assert denied["statusCode"] == 403
+    assert allowed["statusCode"] == 200
 

@@ -1,112 +1,83 @@
 # System Architecture Guide
 
-This document details the complete serverless architecture for the **Event Registration & Ticketing System**. You can use this specification to create your diagram in [draw.io](https://app.diagrams.net/).
+Production traffic terminates at **Amazon CloudFront**. API Gateway is an origin, not a public browser endpoint.
 
 ---
 
-## 🖼️ Official AWS Serverless Architecture Diagram
-
-![AWS Serverless Event Registration Architecture Diagram](architecture.png)
-
----
-
-## 📐 High-Level Architecture Overview
+## High-level architecture
 
 ```
                           ┌──────────────────────────┐
-                          │   Client / Web Frontend  │
+                          │     Browser / Client     │
                           └─────────────┬────────────┘
-                                        │ HTTP (REST)
+                                        │ HTTPS
                                         ▼
                           ┌──────────────────────────┐
-                          │     AWS API Gateway      │
-                          └─────────────┬────────────┘
+                          │     Amazon CloudFront    │
+                          │  TLS 1.2+ · security hdrs│
+                          └───────┬──────────┬───────┘
+                    /*            │          │   /api/*
+                                  ▼          ▼
+                     ┌────────────────┐  ┌─────────────────────┐
+                     │ Private S3     │  │ API Gateway (hidden)│
+                     │ (OAC only)     │  │ + origin secret hdr │
+                     └────────────────┘  └──────────┬──────────┘
+                                                    │
+                                                    ▼
+                                         ┌─────────────────────┐
+                                         │ Regional WAF        │
+                                         │ default deny        │
+                                         └──────────┬──────────┘
+                                                    │
+              ┌─────────────────────────────────────┼─────────────────────────────┐
+              ▼                                     ▼                             ▼
+     POST /register                          GET /events              GET /registrations/{email}
+     DELETE /registration/{id}                    │                             │
+              ▼                                     ▼                             ▼
+     Register / Cancel Lambda              List Events Lambda           Get Registrations Lambda
+              │                                     │                             │
+              └──────────────────► DynamoDB (SSE + PITR) ◄────────────────────────┘
                                         │
-           ┌────────────────────────────┼────────────────────────────┐
-           │                            │                            │
-           ▼                            ▼                            ▼
-  POST /register                  GET /events           GET /registrations/{email}
-  DELETE /registration/{id}             │                            │
-           │                            │                            │
-           ▼                            ▼                            ▼
-┌──────────────────────┐    ┌──────────────────────┐    ┌──────────────────────┐
-│  Register & Cancel   │    │  List Events Lambda  │    │  Get Regs Lambda     │
-│   Lambda Handlers    │    └──────────┬───────────┘    └──────────┬───────────┘
-└──────────┬───────────┘               │                           │
-           │                           │                           │
-           ▼                           ▼                           ▼
-┌──────────────────────────────────────────────────────────────────────────────┐
-│                              AWS DynamoDB                                    │
-│  ┌──────────────────────────┐             ┌───────────────────────────────┐  │
-│  │       Events Table       │             │      Registrations Table      │  │
-│  │   (Partition: eventId)   │             │   (Partition: registrationId) │  │
-│  └──────────────────────────┘             │   (GSI: EmailIndex on email)  │  │
-│                                           └───────────────────────────────┘  │
-└──────────────────────────────────────────────────────────────────────────────┘
-           │
-           ├──────────────────────────┐
-           ▼                          ▼
-┌─────────────────────┐    ┌─────────────────────┐
-│ CloudWatch Logs &   │    │  SNS Notification   │
-│   Error Alarms      │───►│       Topic         │
-└─────────────────────┘    └─────────────────────┘
+                                        ▼
+                              SNS / SES confirmations
+                              CloudWatch error alarms
 ```
 
 ---
 
-## 🎨 Recommended Draw.io Layout & Styling Guide
+## Why CloudFront is the public edge
 
-When constructing this diagram in **[draw.io](https://app.diagrams.net/)**, use the official **AWS Architecture Icons** library (under `More Shapes...` -> `AWS 19` or `AWS 20`).
+| Control | Purpose |
+|---|---|
+| Same-origin `/api/*` | Browser never learns the `execute-api` hostname |
+| Origin custom header `X-Origin-Verify` | CloudFront proves it is the caller |
+| CloudFront Function | Drops spoofed `X-Origin-Verify` from viewers and strips `/api` |
+| Regional WAF | Default-deny on API Gateway; allow only the origin secret |
+| Lambda origin check | Defense in depth if WAF is bypassed |
+| S3 Block Public Access + OAC | Frontend files are not a public bucket website |
+| Response headers policy | HSTS, CSP, frame deny, nosniff |
 
-### 1. Group Containers (Borders & Boxes)
-- **AWS Cloud Container** (Light blue dotted border): Encloses all AWS services.
-- **VPC / Region Box**: Surrounds API Gateway, Lambda, DynamoDB, and CloudWatch.
-- **Compute Layer Box**: Group for the 4 Lambda functions.
-- **Database Layer Box**: Group for the 2 DynamoDB tables.
-
-### 2. AWS Components & Colors
-
-| Component | AWS Icon Name | Color Scheme / Hex | Description |
-|---|---|---|---|
-| **Client** | User / User Client | Steel Blue (`#232F3E`) | Web Browser, Mobile App, or Postman |
-| **API Gateway** | API Gateway | Magenta (`#8C4FFF`) | REST API router with CORS enabled |
-| **Lambda Functions** | AWS Lambda | Orange (`#FF9900`) | 4 handlers (Register, List, Get, Cancel) |
-| **DynamoDB Tables** | Amazon DynamoDB | Blue (`#4D27AA`) | `Events` table & `Registrations` table (with GSI) |
-| **CloudWatch** | Amazon CloudWatch | Dark Pink (`#E7157B`) | Logs retention & 5% Error Rate Alarm |
-| **SNS Topic** | Amazon SNS | Magenta (`#CC2266`) | Confirmation emails & alarm notifications |
+Partner APIs, if any, are called **server-side** from Lambda via `PROVIDERS_JSON`. They are not selectable in the browser.
 
 ---
 
-## 🔗 Connection Matrix (Edges & Arrows)
+## AWS resources (retained + new)
 
-1. **Client ➔ API Gateway**
-   - **Label:** `HTTPS (REST API)`
-   - **Style:** Solid line, arrowhead right.
+Existing (Stage=`prod`):
+- DynamoDB `events-prod`, `registrations-prod`
+- Lambda handlers, SNS topic, CloudWatch alarm
 
-2. **API Gateway ➔ Lambda Handlers**
-   - **Routes:**
-     - `/register` `(POST)` ➔ `register.py`
-     - `/events` `(GET)` ➔ `list_events.py`
-     - `/registrations/{email}` `(GET)` ➔ `get_registrations.py`
-     - `/registration/{id}` `(DELETE)` ➔ `cancel_registration.py`
-   - **Style:** Solid lines with HTTP method badges.
-
-3. **Lambda Handlers ➔ DynamoDB**
-   - `register.py` ➔ Reads `EventsTable` + Writes `RegistrationsTable`
-   - `list_events.py` ➔ Scans/Queries `EventsTable`
-   - `get_registrations.py` ➔ Queries `EmailIndex` GSI on `RegistrationsTable`
-   - `cancel_registration.py` ➔ Deletes item from `RegistrationsTable`
-   - **Style:** Solid lines with operation labels (`GetItem`, `PutItem`, `Query GSI`, `DeleteItem`).
-
-4. **Lambda Handlers ➔ CloudWatch & SNS**
-   - All Lambdas ➔ CloudWatch Logs (`/aws/lambda/*`)
-   - `RegisterFunction` ➔ Publishes registration confirmation event to `NotificationTopic` (SNS).
-   - CloudWatch Alarm ➔ Triggers SNS when `ErrorRate > 5%`.
+Added for production:
+- Secrets Manager origin token
+- Private S3 frontend bucket
+- CloudFront distribution + OAC + path rewrite function
+- AWS WAF WebACL on the API stage
 
 ---
 
-## 📁 Export Instructions for draw.io
-1. Create your diagram on [draw.io](https://app.diagrams.net/).
-2. Export as PNG: `File` ➔ `Export as` ➔ `PNG...`
-3. Set **DPI / Zoom** to 200% for crisp high-resolution text.
-4. Save the exported image to `docs/architecture.png` in this repository!
+## API routes (CloudFront paths)
+
+1. `GET /api/events` → `list_events.py`
+2. `POST /api/register` → `register.py` (capacity + duplicate checks)
+3. `GET /api/registrations/{email}` → `get_registrations.py` (no `/all` dump)
+4. `DELETE /api/registration/{id}` → `cancel_registration.py`

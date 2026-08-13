@@ -6,6 +6,7 @@ with live registration counts computed from Registrations table.
 import os
 import boto3
 from utils.response import build_response, error_response
+from utils.security import require_cloudfront_origin
 from utils.providers import list_events as provider_events
 
 dynamodb = boto3.resource("dynamodb")
@@ -25,6 +26,10 @@ def normalize_event_id(eid):
 
 
 def handler(event, context):
+    denied = require_cloudfront_origin(event)
+    if denied:
+        return denied
+
     events_table = dynamodb.Table(EVENTS_TABLE)
     try:
         items = []
@@ -89,6 +94,21 @@ def handler(event, context):
             item["registeredCount"] = reg_counts.get(eid, 0)
 
         items.sort(key=lambda e: e.get("date", ""))
+
+        try:
+            remote_events = provider_events()
+        except Exception:
+            remote_events = []
+        if remote_events:
+            local_ids = {normalize_event_id(item.get("eventId")) for item in items}
+            for remote in remote_events:
+                rid = normalize_event_id(remote.get("eventId"))
+                if rid and rid not in local_ids:
+                    remote["registeredCount"] = remote.get("registeredCount") or remote.get("registered_count") or 0
+                    items.append(remote)
+                    local_ids.add(rid)
+            items.sort(key=lambda e: e.get("date", ""))
+
         return build_response(200, {"events": items, "count": len(items)})
 
     except Exception as exc:

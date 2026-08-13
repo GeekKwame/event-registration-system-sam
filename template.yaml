@@ -1,8 +1,8 @@
 AWSTemplateFormatVersion: '2010-09-09'
 Transform: AWS::Serverless-2016-10-31
 Description: >
-  Event Registration & Ticketing System
-  Serverless REST API built with AWS SAM (Lambda + API Gateway + DynamoDB)
+  Event Registration & Ticketing System — production AWS stack.
+  Public traffic terminates at CloudFront. API Gateway is not a public entry point.
 
 # ---------------------------------------------------------------------------
 # PARAMETERS
@@ -10,37 +10,39 @@ Description: >
 Parameters:
   Stage:
     Type: String
-    Default: dev
-    Description: Deployment stage (dev, staging, prod)
+    Default: prod
+    AllowedValues: [dev, staging, prod]
+    Description: Deployment stage. Keep "prod" to reuse existing DynamoDB tables.
   NotificationEmail:
     Type: String
     Default: "dogbeblessingkwame@gmail.com"
-    Description: >
-      Email address to receive SNS confirmation emails and
-      CloudWatch alarm notifications. Enabled by default.
+    Description: SNS confirmation and CloudWatch alarm recipient.
   SenderEmail:
     Type: String
     Default: "noreply@studentstudyplannerxyz.xyz"
-    Description: >-
-      SES-verified sender email address used for confirmation emails
-      sent directly to registrants. Must be verified in SES.
-  ResendApiKey:
+    Description: SES-verified sender used for registrant confirmation emails.
+  ResendFromEmail:
     Type: String
-    Default: ""
+    Default: "onboarding@resend.dev"
     Description: >-
-      Optional Resend API key for instant email delivery to any recipient
-      without recipient verification in SES sandbox mode.
+      From address for Resend fallback emails. Must be on a domain verified in
+      Resend. Keep the default until your own domain is verified there.
+
+  # The Resend API key is NOT a stack parameter. It lives in Secrets Manager so it
+  # never appears in CloudFormation parameters or Lambda environment variables.
+  # Set it with: aws secretsmanager put-secret-value --secret-id <stack>/resend-api-key --secret-string '{"apiKey":"re_..."}'
   ProvidersJson:
     Type: String
     Default: '[]'
-    Description: JSON provider registry. Store authenticated provider settings in Secrets Manager in production.
+    NoEcho: true
+    Description: Server-side provider registry JSON. Never expose provider URLs in the browser.
 
 Conditions:
   HasNotificationEmail: !Not [!Equals [!Ref NotificationEmail, ""]]
   HasSenderEmail: !Not [!Equals [!Ref SenderEmail, ""]]
 
 # ---------------------------------------------------------------------------
-# GLOBALS - shared settings applied to every function
+# GLOBALS
 # ---------------------------------------------------------------------------
 Globals:
   Function:
@@ -54,13 +56,8 @@ Globals:
         REGISTRATIONS_TABLE: !Ref RegistrationsTable
         SNS_TOPIC_ARN: !If [HasNotificationEmail, !Ref ConfirmationTopic, ""]
         SES_SENDER_EMAIL: !If [HasSenderEmail, !Ref SenderEmail, ""]
-        RESEND_API_KEY: !Ref ResendApiKey
         PROVIDERS_JSON: !Ref ProvidersJson
-  Api:
-    Cors:
-      AllowMethods: "'GET,POST,DELETE,OPTIONS'"
-      AllowHeaders: "'Content-Type,Authorization'"
-      AllowOrigin: "'*'"
+        ORIGIN_VERIFY_SECRET: !Sub "{{resolve:secretsmanager:${OriginVerifySecret}:SecretString}}"
 
 # ---------------------------------------------------------------------------
 # RESOURCES
@@ -68,13 +65,48 @@ Globals:
 Resources:
 
   # ---------------------------------------------------------------------
-  # DynamoDB Tables
+  # Shared secret — CloudFront sends it; WAF + Lambda reject requests without it
+  # ---------------------------------------------------------------------
+  OriginVerifySecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Name: !Sub "${AWS::StackName}/origin-verify"
+      Description: Origin secret injected by CloudFront. Never expose to the browser.
+      GenerateSecretString:
+        PasswordLength: 32
+        ExcludePunctuation: true
+        RequireEachIncludedType: false
+
+  # ---------------------------------------------------------------------
+  # Resend API key. CloudFormation only creates an unusable placeholder;
+  # the real key is written out-of-band so it is never in a template,
+  # a parameter, or a Lambda environment variable.
+  # ---------------------------------------------------------------------
+  ResendApiKeySecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Name: !Sub "${AWS::StackName}/resend-api-key"
+      Description: Resend transactional email API key. Rotate with put-secret-value.
+      GenerateSecretString:
+        SecretStringTemplate: '{"placeholder":"unset"}'
+        GenerateStringKey: "apiKey"
+        PasswordLength: 24
+        ExcludePunctuation: true
+
+  # ---------------------------------------------------------------------
+  # DynamoDB — existing prod table names are preserved via Stage=prod
   # ---------------------------------------------------------------------
   EventsTable:
     Type: AWS::DynamoDB::Table
+    UpdateReplacePolicy: Retain
+    DeletionPolicy: Retain
     Properties:
       TableName: !Sub "events-${Stage}"
       BillingMode: PAY_PER_REQUEST
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      SSESpecification:
+        SSEEnabled: true
       AttributeDefinitions:
         - AttributeName: eventId
           AttributeType: S
@@ -84,9 +116,15 @@ Resources:
 
   RegistrationsTable:
     Type: AWS::DynamoDB::Table
+    UpdateReplacePolicy: Retain
+    DeletionPolicy: Retain
     Properties:
       TableName: !Sub "registrations-${Stage}"
       BillingMode: PAY_PER_REQUEST
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      SSESpecification:
+        SSEEnabled: true
       AttributeDefinitions:
         - AttributeName: registrationId
           AttributeType: S
@@ -104,7 +142,7 @@ Resources:
             ProjectionType: ALL
 
   # ---------------------------------------------------------------------
-  # Optional SNS Topic for confirmation emails + alarm notifications
+  # SNS
   # ---------------------------------------------------------------------
   ConfirmationTopic:
     Type: AWS::SNS::Topic
@@ -121,7 +159,29 @@ Resources:
       Endpoint: !Ref NotificationEmail
 
   # ---------------------------------------------------------------------
-  # Lambda Functions (one per endpoint)
+  # REST API — not the public URL. CloudFront is the only browser origin.
+  # ---------------------------------------------------------------------
+  EventApi:
+    Type: AWS::Serverless::Api
+    Properties:
+      Name: !Sub "event-registration-api-${Stage}"
+      StageName: Prod
+      TracingEnabled: true
+      EndpointConfiguration:
+        Type: REGIONAL
+      MethodSettings:
+        - ResourcePath: "/*"
+          HttpMethod: "*"
+          ThrottlingBurstLimit: 40
+          ThrottlingRateLimit: 20
+          MetricsEnabled: true
+      Cors:
+        AllowMethods: "'GET,POST,DELETE,OPTIONS'"
+        AllowHeaders: "'Content-Type'"
+        AllowOrigin: "'*'"
+
+  # ---------------------------------------------------------------------
+  # Lambda Functions
   # ---------------------------------------------------------------------
   RegisterFunction:
     Type: AWS::Serverless::Function
@@ -129,7 +189,15 @@ Resources:
       FunctionName: !Sub "event-register-${Stage}"
       CodeUri: src/handlers/
       Handler: register.handler
+      Environment:
+        Variables:
+          RESEND_SECRET_ARN: !Ref ResendApiKeySecret
+          RESEND_FROM_EMAIL: !Ref ResendFromEmail
       Policies:
+        - Statement:
+            - Effect: Allow
+              Action: secretsmanager:GetSecretValue
+              Resource: !Ref ResendApiKeySecret
         - DynamoDBCrudPolicy:
             TableName: !Ref RegistrationsTable
         - DynamoDBReadPolicy:
@@ -138,16 +206,25 @@ Resources:
             - Effect: Allow
               Action: sns:Publish
               Resource: !If [HasNotificationEmail, !Ref ConfirmationTopic, !Sub "arn:aws:sns:${AWS::Region}:${AWS::AccountId}:no-topic"]
+        # Scoped to this account's identities. The sender may be verified as
+        # either an email or a domain identity, so the from address is what is
+        # actually constrained.
         - Statement:
             - Effect: Allow
               Action:
                 - ses:SendEmail
                 - ses:SendRawEmail
-              Resource: "*"
+              Resource: !Sub "arn:aws:ses:${AWS::Region}:${AWS::AccountId}:identity/*"
+              Condition: !If
+                - HasSenderEmail
+                - StringEquals:
+                    ses:FromAddress: !Ref SenderEmail
+                - !Ref "AWS::NoValue"
       Events:
         RegisterApi:
           Type: Api
           Properties:
+            RestApiId: !Ref EventApi
             Path: /register
             Method: post
 
@@ -166,6 +243,7 @@ Resources:
         ListEventsApi:
           Type: Api
           Properties:
+            RestApiId: !Ref EventApi
             Path: /events
             Method: get
 
@@ -182,6 +260,7 @@ Resources:
         GetRegistrationsApi:
           Type: Api
           Properties:
+            RestApiId: !Ref EventApi
             Path: /registrations/{email}
             Method: get
 
@@ -198,12 +277,12 @@ Resources:
         CancelRegistrationApi:
           Type: Api
           Properties:
+            RestApiId: !Ref EventApi
             Path: /registration/{id}
             Method: delete
 
   # ---------------------------------------------------------------------
-  # CloudWatch Alarms - error rate > 5% per function
-  # (Metric math: Errors / Invocations * 100)
+  # CloudWatch
   # ---------------------------------------------------------------------
   RegisterErrorRateAlarm:
     Type: AWS::CloudWatch::Alarm
@@ -250,14 +329,261 @@ Resources:
       LogGroupName: !Sub "/aws/lambda/event-register-${Stage}"
       RetentionInDays: 14
 
+  # ---------------------------------------------------------------------
+  # WAF — block any request to API Gateway that is not from CloudFront
+  # ---------------------------------------------------------------------
+  ApiWebACL:
+    Type: AWS::WAFv2::WebACL
+    Properties:
+      Name: !Sub "${AWS::StackName}-api-origin"
+      Scope: REGIONAL
+      Description: Allow only CloudFront origin requests that present the shared secret.
+      DefaultAction:
+        Block: {}
+      VisibilityConfig:
+        SampledRequestsEnabled: true
+        CloudWatchMetricsEnabled: true
+        MetricName: !Sub "${AWS::StackName}-api-waf"
+      Rules:
+        - Name: AmazonIpReputation
+          Priority: 0
+          OverrideAction:
+            None: {}
+          Statement:
+            ManagedRuleGroupStatement:
+              VendorName: AWS
+              Name: AWSManagedRulesAmazonIpReputationList
+          VisibilityConfig:
+            SampledRequestsEnabled: true
+            CloudWatchMetricsEnabled: true
+            MetricName: AmazonIpReputation
+        - Name: AllowCloudFrontOrigin
+          Priority: 1
+          Action:
+            Allow: {}
+          Statement:
+            ByteMatchStatement:
+              FieldToMatch:
+                SingleHeader:
+                  Name: x-origin-verify
+              PositionalConstraint: EXACTLY
+              SearchString: !Sub "{{resolve:secretsmanager:${OriginVerifySecret}:SecretString}}"
+              TextTransformations:
+                - Priority: 0
+                  Type: NONE
+          VisibilityConfig:
+            SampledRequestsEnabled: true
+            CloudWatchMetricsEnabled: true
+            MetricName: AllowCloudFrontOrigin
+
+  ApiWebACLAssociation:
+    Type: AWS::WAFv2::WebACLAssociation
+    DependsOn:
+      - EventApiProdStage
+    Properties:
+      ResourceArn: !Sub "arn:aws:apigateway:${AWS::Region}::/restapis/${EventApi}/stages/Prod"
+      WebACLArn: !GetAtt ApiWebACL.Arn
+
+  # ---------------------------------------------------------------------
+  # Private S3 origin for the frontend (no public bucket access)
+  # ---------------------------------------------------------------------
+  FrontendBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub "event-registration-web-${AWS::AccountId}-${Stage}"
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+            BucketKeyEnabled: true
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      OwnershipControls:
+        Rules:
+          - ObjectOwnership: BucketOwnerEnforced
+      VersioningConfiguration:
+        Status: Enabled
+
+  CloudFrontOAC:
+    Type: AWS::CloudFront::OriginAccessControl
+    Properties:
+      OriginAccessControlConfig:
+        Name: !Sub "${AWS::StackName}-frontend-oac"
+        Description: CloudFront access to the private frontend bucket
+        OriginAccessControlOriginType: s3
+        SigningBehavior: always
+        SigningProtocol: sigv4
+
+  FrontendBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref FrontendBucket
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: AllowCloudFrontRead
+            Effect: Allow
+            Principal:
+              Service: cloudfront.amazonaws.com
+            Action: s3:GetObject
+            Resource: !Sub "${FrontendBucket.Arn}/*"
+            Condition:
+              StringEquals:
+                AWS:SourceArn: !Sub "arn:aws:cloudfront::${AWS::AccountId}:distribution/${CloudFrontDistribution}"
+          - Sid: DenyInsecureTransport
+            Effect: Deny
+            Principal: "*"
+            Action: "s3:*"
+            Resource:
+              - !GetAtt FrontendBucket.Arn
+              - !Sub "${FrontendBucket.Arn}/*"
+            Condition:
+              Bool:
+                aws:SecureTransport: "false"
+
+  # ---------------------------------------------------------------------
+  # CloudFront — the only public HTTPS endpoint
+  # ---------------------------------------------------------------------
+  ApiPathRewriteFunction:
+    Type: AWS::CloudFront::Function
+    Properties:
+      Name: !Sub "${AWS::StackName}-api-rewrite"
+      AutoPublish: true
+      FunctionConfig:
+        Comment: Drop spoofed origin headers and strip /api before API Gateway
+        Runtime: cloudfront-js-2.0
+      FunctionCode: |
+        function handler(event) {
+          var request = event.request;
+          delete request.headers['x-origin-verify'];
+          var uri = request.uri;
+          if (uri.indexOf('/api/') === 0) {
+            request.uri = uri.substring(4);
+          } else if (uri === '/api') {
+            request.uri = '/';
+          }
+          return request;
+        }
+
+  FrontendSecurityHeaders:
+    Type: AWS::CloudFront::ResponseHeadersPolicy
+    Properties:
+      ResponseHeadersPolicyConfig:
+        Name: !Sub "${AWS::StackName}-security-headers"
+        Comment: Browser security headers for the CloudFront site
+        SecurityHeadersConfig:
+          StrictTransportSecurity:
+            AccessControlMaxAgeSec: 31536000
+            IncludeSubdomains: true
+            Override: true
+            Preload: true
+          ContentTypeOptions:
+            Override: true
+          FrameOptions:
+            FrameOption: DENY
+            Override: true
+          ReferrerPolicy:
+            ReferrerPolicy: strict-origin-when-cross-origin
+            Override: true
+          XSSProtection:
+            ModeBlock: true
+            Override: true
+            Protection: true
+          ContentSecurityPolicy:
+            ContentSecurityPolicy: "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
+            Override: true
+        CustomHeadersConfig:
+          Items:
+            - Header: Permissions-Policy
+              Value: "camera=(), microphone=(), geolocation=()"
+              Override: true
+
+  CloudFrontDistribution:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Comment: !Sub "Event registration frontend and hidden API (${Stage})"
+        Enabled: true
+        HttpVersion: http2and3
+        IPV6Enabled: true
+        PriceClass: PriceClass_100
+        DefaultRootObject: index.html
+        ViewerCertificate:
+          CloudFrontDefaultCertificate: true
+          MinimumProtocolVersion: TLSv1.2_2021
+        Origins:
+          - Id: FrontendS3
+            DomainName: !GetAtt FrontendBucket.RegionalDomainName
+            OriginAccessControlId: !GetAtt CloudFrontOAC.Id
+            S3OriginConfig:
+              OriginAccessIdentity: ""
+          - Id: EventApi
+            DomainName: !Sub "${EventApi}.execute-api.${AWS::Region}.amazonaws.com"
+            OriginPath: /Prod
+            OriginCustomHeaders:
+              - HeaderName: X-Origin-Verify
+                HeaderValue: !Sub "{{resolve:secretsmanager:${OriginVerifySecret}:SecretString}}"
+            CustomOriginConfig:
+              HTTPSPort: 443
+              OriginProtocolPolicy: https-only
+              OriginSSLProtocols:
+                - TLSv1.2
+        DefaultCacheBehavior:
+          TargetOriginId: FrontendS3
+          ViewerProtocolPolicy: redirect-to-https
+          AllowedMethods:
+            - GET
+            - HEAD
+            - OPTIONS
+          CachedMethods:
+            - GET
+            - HEAD
+          Compress: true
+          CachePolicyId: 658327ea-f89d-4fab-a63d-7e88639e58f6
+          ResponseHeadersPolicyId: !Ref FrontendSecurityHeaders
+        CacheBehaviors:
+          - PathPattern: /api/*
+            TargetOriginId: EventApi
+            ViewerProtocolPolicy: redirect-to-https
+            AllowedMethods:
+              - GET
+              - HEAD
+              - OPTIONS
+              - PUT
+              - POST
+              - PATCH
+              - DELETE
+            CachedMethods:
+              - GET
+              - HEAD
+            Compress: true
+            CachePolicyId: 4135ea2d-6df8-44a3-9df3-4b5a84be39ad
+            OriginRequestPolicyId: b689b0a8-53d0-40ab-baf2-68738e2966ac
+            ResponseHeadersPolicyId: !Ref FrontendSecurityHeaders
+            FunctionAssociations:
+              - EventType: viewer-request
+                FunctionARN: !GetAtt ApiPathRewriteFunction.FunctionARN
+
 # ---------------------------------------------------------------------------
-# OUTPUTS
+# OUTPUTS — never publish InternalApiGatewayUrl
 # ---------------------------------------------------------------------------
 Outputs:
-  ApiUrl:
-    Description: Base URL for the API Gateway stage
-    Value: !Sub "https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod"
+  CloudFrontUrl:
+    Description: Public HTTPS site. This is the only URL browsers should use.
+    Value: !Sub "https://${CloudFrontDistribution.DomainName}"
+  CloudFrontDistributionId:
+    Description: Used to invalidate the CDN after frontend deploys
+    Value: !Ref CloudFrontDistribution
+  FrontendBucketName:
+    Description: Private S3 bucket that CloudFront reads from
+    Value: !Ref FrontendBucket
   EventsTableName:
     Value: !Ref EventsTable
   RegistrationsTableName:
     Value: !Ref RegistrationsTable
+  InternalApiGatewayUrl:
+    Description: INTERNAL ONLY. Blocked by WAF unless X-Origin-Verify is present. Do not put this in the frontend or README.
+    Value: !Sub "https://${EventApi}.execute-api.${AWS::Region}.amazonaws.com/Prod"

@@ -1,143 +1,126 @@
-# ⚡ Event-Connect — Universal Multi-API Event Manager & Ticketing Integration Hub
+# Event-Connect — Serverless Event Registration
 
-> A modern, serverless web application and multi-region integration hub that enables event managers to connect to different AWS event APIs across regions, monitor live capacity, and register attendees seamlessly without building another app.
-
----
-
-## 🌐 Live Web Application & API Gateways
-
-- 🚀 **Live Web Application (GitHub Pages):**
-  👉 **[https://geekkwame.github.io/event-registration-system-sam/](https://geekkwame.github.io/event-registration-system-sam/)**
-
-- ⚡ **Connected API Gateway Endpoints:**
-  - 🟢 **My Primary Hub API (`us-west-1`):** `https://kems8drwn6.execute-api.us-west-1.amazonaws.com/Prod`
-  - 🟣 **Gloria's API (`us-east-1`):** `https://djabididt6.execute-api.us-east-1.amazonaws.com`
-  - 🔵 **Dawuni's API (`us-east-1`):** `https://mmrq6ebalh.execute-api.us-east-1.amazonaws.com`
+Production AWS stack: **CloudFront** is the only public HTTPS endpoint. API Gateway stays a private origin (WAF + origin secret). Existing DynamoDB tables (`events-prod`, `registrations-prod`) are retained.
 
 ---
 
-## 💡 What Problem Does This Solve? (Non-Technical Overview)
+## Live site
 
-When event organizers use basic online forms and manual Excel spreadsheets, three big problems happen:
-1. **Overbooking:** People keep signing up even when an event is completely full.
-2. **Duplicate Registrations:** People fill out the form multiple times by mistake.
-3. **Multi-System Fragmentation:** Organizations operating across different AWS regions or partner APIs cannot view or manage tickets in one unified dashboard.
+After deploy, the public site is:
 
-### 🌟 How EventPulse Fixes It:
-- **Universal Multi-API Connection:** Connect to any AWS SAM API Gateway base URL instantly with Quick-Connect preset buttons.
-- **Cross-System Registration:** Sign up for local or partner events directly or through secure serverless backend routing with CORS fallbacks.
-- **Automatic Capacity Control:** Once an event reaches its seat limit, new sign-ups are automatically blocked.
-- **Live SNS Alerts:** Automatic confirmation emails dispatched via AWS SNS upon confirmed registration.
-- **$0 Running Cost When Idle:** Built using AWS Serverless technology — zero monthly fees while idle!
+**https://d3mbqhiwlx08nz.cloudfront.net**
+
+Do not publish or paste API Gateway `execute-api` URLs into the frontend, README, or GitHub Pages. Direct calls to API Gateway are blocked.
 
 ---
 
-## 🏛️ How It Works (Architecture Overview)
-
-![AWS Serverless Event Registration Architecture Diagram](docs/architecture.png)
+## Architecture
 
 ```
-┌────────────────────────────────┐       ┌────────────────────────┐       ┌────────────────────────┐
-│  Universal Web Dashboard (UI)  │ ────► │    AWS API Gateway     │ ────► │  AWS Lambda Handlers   │
-│   (GitHub Pages / Single Page) │       │ (us-west-1 / us-east-1)│       │  (Python 3.12 Code)    │
-└────────────────────────────────┘       └────────────────────────┘       └───────────┬────────────┘
-                                                                                      │
-                                                                                      ▼
-                                                                           ┌────────────────────────┐
-                                                                           │  Amazon DynamoDB       │
-                                                                           │  (Events & Sign-ups)   │
-                                                                           └────────────────────────┘
+Browser
+  └── CloudFront  (public HTTPS, security headers)
+        ├── /*        → private S3 bucket (OAC)
+        └── /api/*    → API Gateway origin + X-Origin-Verify
+                          └── Regional WAF (default deny)
+                                └── Lambda + DynamoDB + SNS/SES
 ```
 
-1. **Universal Web Dashboard (Frontend):** Responsive single-page web application featuring Quick-Connect API presets, live capacity progress bars, and attendee pass management.
-2. **AWS API Gateway:** Secure REST API routing with CORS support and flexible stage path normalization.
-3. **AWS Lambda Functions:** Python 3.12 microservices that handle event listings (`GET /events`), registrations (`POST /register`), registration lookups (`GET /registrations/{email}` & `GET /registrations/all`), and ticket cancellations (`DELETE /registration/{id}`).
-4. **Amazon DynamoDB & SNS:** High-speed NoSQL database tables (`EventsTable` and `RegistrationsTable` with EmailIndex GSI) paired with SNS topic email publishing.
+- Frontend calls same-origin paths only: `/api/events`, `/api/register`, `/api/registrations/{email}`, `/api/registration/{id}`
+- CloudFront strips `/api`, injects the origin secret, and forwards to API Gateway
+- WAF and Lambda reject any request missing that secret
+- `/registrations/all` is disabled so attendee PII cannot be dumped
+
+See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 ---
 
-## 📁 Repository Structure
+## Repository layout
 
 ```text
 event-registration-system/
-├── template.yaml              # SAM Infrastructure-as-Code (Defines all AWS resources)
-├── samconfig.toml             # Deployment settings (Stack name, region, S3 bucket)
-├── frontend/                  # Web Dashboard UI
-│   ├── index.html             # Dashboard markup with modern hero & grid
-│   ├── style.css              # Glassmorphism design system & status badges
-│   ├── app.js                 # API connection, CORS fallback & registration logic
-│   └── README.md              # Frontend documentation
-├── src/handlers/              # AWS Lambda Backend Code (Python 3.12)
-│   ├── register.py            # POST /register (creates sign-up & handles provider routing)
-│   ├── list_events.py         # GET /events (lists open events with registered attendee counts)
-│   ├── get_registrations.py   # GET /registrations/{email} & GET /registrations/all
-│   ├── cancel_registration.py # DELETE /registration/{id} (cancels sign-up)
-│   └── utils/response.py      # Shared CORS & JSON response formatter
-├── docs/                      # Architecture Diagrams & Specs
-│   ├── ARCHITECTURE.md        # draw.io design specs & AWS component blueprint
-│   └── PERSONAL_NOTES.md      # AWS CLI / SAM setup notes & troubleshooting
-├── scripts/seed_events.py     # Script to populate sample events in DynamoDB
-├── tests/test_handlers.py     # Automated pytest unit tests (9/9 passed)
-└── .github/workflows/deploy.yml # GitHub Actions CI/CD deployment automation
+├── template.yaml              # Full AWS stack (CloudFront, S3, WAF, API, Lambda, DynamoDB)
+├── samconfig.toml             # Local deploy settings (gitignored; no secrets)
+├── frontend/                  # Static UI published to S3 + CloudFront
+├── src/handlers/              # Lambda code
+├── scripts/sync-frontend.ps1  # Upload UI and invalidate CloudFront
+└── .github/workflows/deploy.yml
 ```
 
 ---
 
-## 🛠️ Step-by-Step Deployment Guide
+## Deploy
 
 ### Prerequisites
-- [AWS CLI](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html) (`aws --version`)
-- [AWS SAM CLI](https://docs.aws.amazon.com/serverless-application-model/latest/developerguide/install-sam-cli.html) (`sam --version`)
-- Python 3.12 (`python --version`)
+- AWS CLI and SAM CLI
+- Python 3.12
 
-### 1. Build and Deploy Backend to AWS
+### 1. Backend (keeps existing prod tables)
+
 ```bash
-# 1. Build serverless application
 sam build
-
-# 2. Deploy stack to AWS
-sam deploy
+sam deploy --no-confirm-changeset --parameter-overrides Stage=prod
 ```
 
-### 2. Run Unit Tests Locally
-```bash
-python -m pytest tests/
+`Stage=prod` is required so CloudFormation continues to use `events-prod` and `registrations-prod`.
+
+### 2. Frontend
+
+```powershell
+.\scripts\sync-frontend.ps1
 ```
 
-### 3. Test API Endpoints with `curl`
 ```bash
-# List Events
-curl https://YOUR_API_URL/events
+bash scripts/sync-frontend.sh
+```
 
-# Register for Event
-curl -X POST https://YOUR_API_URL/register \
-  -H "Content-Type: application/json" \
-  -d '{"eventId":"evt-001","email":"user@example.com","name":"Jane Doe"}'
+### 3. Tests
 
-# View All Registrations
-curl https://YOUR_API_URL/registrations/all
-
-# View User Registrations
-curl https://YOUR_API_URL/registrations/user@example.com
-
-# Cancel Registration
-curl -X DELETE https://YOUR_API_URL/registration/REGISTRATION_ID
+```bash
+pip install -r tests/requirements-test.txt
+python -m pytest tests/ -v
 ```
 
 ---
 
-## ⚙️ CI/CD Automation & GitHub Actions
+## API (via CloudFront only)
 
-This repository utilizes **GitHub Actions** (`.github/workflows/deploy.yml`):
-- **Continuous Integration (PR):** Installs Python 3.12 dependencies and executes unit tests (`pytest tests/`).
-- **Continuous Deployment (`main`):** Automatically builds and deploys serverless updates to AWS us-west-1.
-- **GitHub Pages (`pages.yml`):** Automatically builds and deploys the static frontend to GitHub Pages on every push.
+| Method | Path | Notes |
+|---|---|---|
+| GET | `/api/events` | Catalog with live seat counts |
+| POST | `/api/register` | Rejects duplicates and full events |
+| GET | `/api/registrations/{email}` | That attendee only — valid email required |
+| DELETE | `/api/registration/{id}` | Cancel a ticket |
 
 ---
 
-## 🧹 Cleaning Up AWS Resources
+## Secrets
 
-To remove all deployed AWS infrastructure cleanly:
+The Resend API key lives in Secrets Manager, not in the template, stack parameters, or Lambda environment variables. CloudFormation creates an unusable placeholder; you write the real value once:
+
 ```bash
-sam delete
+aws secretsmanager put-secret-value \
+  --secret-id event-registration-system/resend-api-key \
+  --region us-west-1 \
+  --secret-string '{"apiKey":"re_YOUR_NEW_KEY"}'
 ```
+
+To rotate: create a new key in Resend, delete the old one there, then run the command above with the new value. No redeploy is needed — the function reads it on the next invocation.
+
+## Email delivery
+
+SES is the primary sender, with Resend as the fallback. **SES is still in sandbox mode**, so it can only deliver to identities verified in `us-west-1`. Every other recipient is served by Resend, which is why the fallback must stay working.
+
+Resend sends from `ResendFromEmail` (default `onboarding@resend.dev`). To send from your own domain, verify it in Resend first, then deploy with `ResendFromEmail=noreply@yourdomain`.
+
+To lift the SES restriction, request production access for SES in `us-west-1`.
+
+## Other notes
+
+- The committed Resend key is in git history. It is still in use by choice; revoke it in Resend if that changes.
+- GitHub Pages hosting is removed so the UI cannot leak API Gateway URLs.
+
+---
+
+## Cleanup
+
+DynamoDB tables use `DeletionPolicy: Retain`. `sam delete` removes compute and CDN resources but keeps event and registration data.

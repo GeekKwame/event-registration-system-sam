@@ -12,13 +12,16 @@ Expected JSON body:
 import os
 import json
 import uuid
-import re
+import html
 from datetime import datetime, timezone
 
 import boto3
+from boto3.dynamodb.conditions import Key
 from utils.response import build_response, error_response
+from utils.security import is_valid_email, require_cloudfront_origin
 from utils.providers import ProviderError, register as register_with_provider
 
+import urllib.error
 import urllib.request
 
 dynamodb = boto3.resource("dynamodb")
@@ -29,19 +32,89 @@ EVENTS_TABLE = os.environ["EVENTS_TABLE"]
 REGISTRATIONS_TABLE = os.environ["REGISTRATIONS_TABLE"]
 SNS_TOPIC_ARN = os.environ.get("SNS_TOPIC_ARN", "")
 SES_SENDER_EMAIL = os.environ.get("SES_SENDER_EMAIL", "")
-RESEND_API_KEY = os.environ.get("RESEND_API_KEY", "")
+RESEND_SECRET_ARN = os.environ.get("RESEND_SECRET_ARN", "")
+# Must be an address on a domain verified in Resend, otherwise Resend returns 403.
+RESEND_FROM_EMAIL = os.environ.get("RESEND_FROM_EMAIL", "onboarding@resend.dev")
 
-EMAIL_REGEX = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+_resend_api_key = ""
+
+
+def get_resend_api_key():
+    """Read the Resend key from Secrets Manager, caching only a usable key.
+
+    Failures and placeholder values are not cached, so a rotated key takes
+    effect on the next invocation instead of waiting for a cold start.
+    Returns "" when no usable key is configured, which disables the Resend
+    fallback rather than failing the registration.
+    """
+    global _resend_api_key
+    if _resend_api_key:
+        return _resend_api_key
+
+    if not RESEND_SECRET_ARN:
+        return ""
+
+    try:
+        secret = boto3.client("secretsmanager").get_secret_value(SecretId=RESEND_SECRET_ARN)
+        raw = secret.get("SecretString") or ""
+        try:
+            parsed = json.loads(raw)
+            value = parsed.get("apiKey", "") if isinstance(parsed, dict) else ""
+        except json.JSONDecodeError:
+            value = raw
+        # The CloudFormation-generated placeholder is not a real Resend key.
+        if value.startswith("re_"):
+            _resend_api_key = value
+    except Exception as exc:
+        print(f"Could not read Resend secret: {exc}")
+
+    return _resend_api_key or ""
+
+
+def _count_registrations(event_id):
+    table = dynamodb.Table(REGISTRATIONS_TABLE)
+    count = 0
+    scan_kwargs = {"ProjectionExpression": "eventId"}
+    while True:
+        response = table.scan(**scan_kwargs)
+        for item in response.get("Items", []):
+            if item.get("eventId") == event_id:
+                count += 1
+        if "LastEvaluatedKey" not in response:
+            break
+        scan_kwargs["ExclusiveStartKey"] = response["LastEvaluatedKey"]
+    return count
+
+
+def _already_registered(email, event_id):
+    table = dynamodb.Table(REGISTRATIONS_TABLE)
+    kwargs = {
+        "IndexName": "EmailIndex",
+        "KeyConditionExpression": Key("email").eq(email),
+    }
+    while True:
+        response = table.query(**kwargs)
+        for item in response.get("Items", []):
+            if item.get("eventId") == event_id and item.get("status") != "cancelled":
+                return True
+        if "LastEvaluatedKey" not in response:
+            break
+        kwargs["ExclusiveStartKey"] = response["LastEvaluatedKey"]
+    return False
+
+
+def _public_registration(item):
+    return {key: value for key, value in item.items() if key != "providerResponse"}
 
 
 def send_resend_email(to_email, subject, html_body, text_body):
     """Send transactional email via Resend API (instant delivery, no recipient sandbox restrictions)."""
-    if not RESEND_API_KEY:
+    resend_api_key = get_resend_api_key()
+    if not resend_api_key:
         return False
     try:
-        sender_addr = f"Event-Connect <{SES_SENDER_EMAIL}>" if (SES_SENDER_EMAIL and "@studentstudyplannerxyz.xyz" in SES_SENDER_EMAIL) else "Event-Connect <onboarding@resend.dev>"
         payload = json.dumps({
-            "from": sender_addr,
+            "from": f"Event-Connect <{RESEND_FROM_EMAIL}>",
             "to": [to_email],
             "subject": subject,
             "html": html_body,
@@ -51,14 +124,26 @@ def send_resend_email(to_email, subject, html_body, text_body):
             "https://api.resend.com/emails",
             data=payload,
             headers={
-                "Authorization": f"Bearer {RESEND_API_KEY}",
+                "Authorization": f"Bearer {resend_api_key}",
                 "Content-Type": "application/json",
+                # Resend sits behind Cloudflare, which blocks the default
+                # Python-urllib agent with error 1010.
+                "User-Agent": "Event-Connect/1.0",
             },
             method="POST",
         )
         with urllib.request.urlopen(req) as resp:
             print("Resend email sent successfully:", resp.status)
             return True
+    except urllib.error.HTTPError as exc:
+        # The response body carries the actual reason (unverified domain,
+        # restricted recipient, bad key); the status alone is not diagnostic.
+        try:
+            detail = exc.read().decode("utf-8", "replace")[:500]
+        except Exception:
+            detail = "<no body>"
+        print(f"Resend API Error {exc.code}: {detail}")
+        return False
     except Exception as exc:
         print(f"Resend API Error: {exc}")
         return False
@@ -66,8 +151,12 @@ def send_resend_email(to_email, subject, html_body, text_body):
 
 def send_ses_confirmation(to_email, name, event_name, event_id, registration_id, event_date=""):
     """Send a styled HTML confirmation email to the registrant via SES, falling back to Resend if unverified."""
-    display_name = name or to_email
-    date_line = f'<tr><td style="padding:6px 12px;color:#6b7280;">Date</td><td style="padding:6px 12px;font-weight:600">{event_date}</td></tr>' if event_date else ""
+    display_name = html.escape(name or to_email)
+    safe_event_name = html.escape(str(event_name or ""))
+    safe_event_id = html.escape(str(event_id or ""))
+    safe_registration_id = html.escape(str(registration_id or ""))
+    safe_event_date = html.escape(str(event_date or ""))
+    date_line = f'<tr><td style="padding:6px 12px;color:#6b7280;">Date</td><td style="padding:6px 12px;font-weight:600">{safe_event_date}</td></tr>' if event_date else ""
     html_body = f"""
     <html>
     <body style="margin:0;padding:0;background:#f3f4f6;font-family:'Segoe UI',Roboto,Arial,sans-serif">
@@ -87,10 +176,10 @@ def send_ses_confirmation(to_email, name, event_name, event_id, registration_id,
                 Your spot has been secured! Here are your registration details:
               </p>
               <table width="100%" style="background:#f9fafb;border-radius:8px;margin:20px 0;border-collapse:collapse">
-                <tr><td style="padding:6px 12px;color:#6b7280;">Event</td><td style="padding:6px 12px;font-weight:600">{event_name}</td></tr>
-                <tr><td style="padding:6px 12px;color:#6b7280;">Event ID</td><td style="padding:6px 12px;font-family:monospace">{event_id}</td></tr>
+                <tr><td style="padding:6px 12px;color:#6b7280;">Event</td><td style="padding:6px 12px;font-weight:600">{safe_event_name}</td></tr>
+                <tr><td style="padding:6px 12px;color:#6b7280;">Event ID</td><td style="padding:6px 12px;font-family:monospace">{safe_event_id}</td></tr>
                 {date_line}
-                <tr><td style="padding:6px 12px;color:#6b7280;">Ticket ID</td><td style="padding:6px 12px;font-family:monospace;font-size:13px">{registration_id}</td></tr>
+                <tr><td style="padding:6px 12px;color:#6b7280;">Ticket ID</td><td style="padding:6px 12px;font-family:monospace;font-size:13px">{safe_registration_id}</td></tr>
                 <tr><td style="padding:6px 12px;color:#6b7280;">Status</td><td style="padding:6px 12px"><span style="background:#d1fae5;color:#065f46;padding:2px 10px;border-radius:12px;font-size:13px;font-weight:600">Confirmed ✓</span></td></tr>
               </table>
               <p style="color:#6b7280;font-size:13px;line-height:1.5">
@@ -112,17 +201,17 @@ def send_ses_confirmation(to_email, name, event_name, event_id, registration_id,
 
     text_body = (
         f"Hello {display_name},\n\n"
-        f"Your registration for '{event_name}' has been confirmed!\n\n"
+        f"Your registration for '{safe_event_name}' has been confirmed!\n\n"
         f"--- Registration Details ---\n"
-        f"Event: {event_name}\n"
-        f"Event ID: {event_id}\n"
-        f"Ticket ID: {registration_id}\n"
+        f"Event: {safe_event_name}\n"
+        f"Event ID: {safe_event_id}\n"
+        f"Ticket ID: {safe_registration_id}\n"
         f"Status: Confirmed\n\n"
         f"Keep this email for your records.\n"
         f"— Event-Connect"
     )
 
-    subject = f"🎉 Registration Confirmed — {event_name}"
+    subject = f"Registration Confirmed — {event_name}"
 
     # 1. Primary: Try AWS SES
     if SES_SENDER_EMAIL:
@@ -148,6 +237,10 @@ def send_ses_confirmation(to_email, name, event_name, event_id, registration_id,
 
 
 def handler(event, context):
+    denied = require_cloudfront_origin(event)
+    if denied:
+        return denied
+
     try:
         body = json.loads(event.get("body") or "{}")
     except json.JSONDecodeError:
@@ -159,11 +252,17 @@ def handler(event, context):
     email = (body.get("email") or "").strip().lower()
     name = (body.get("name") or "").strip()
 
-    # --- Input validation -------------------------------------------------
-    if not event_id:
+    if not event_id or len(event_id) > 128:
         return error_response(400, "eventId is required")
-    if not email or not EMAIL_REGEX.match(email):
+    if not is_valid_email(email):
         return error_response(400, "A valid email address is required")
+    if len(name) > 100:
+        return error_response(400, "name is too long")
+    if provider_id and len(provider_id) > 64:
+        return error_response(400, "providerId is invalid")
+
+    if _already_registered(email, event_id):
+        return error_response(409, "This email is already registered for this event")
 
     # --- Register through an external provider, then mirror the result -----
     # Namespaced IDs prevent two providers' "101" events from colliding.
@@ -225,7 +324,7 @@ def handler(event, context):
 
         return build_response(201, {
             "message": "Registration successful",
-            "registration": item,
+            "registration": _public_registration(item),
         })
 
     # --- Confirm the local EventPulse event exists -------------------------
@@ -253,6 +352,15 @@ def handler(event, context):
 
     if not event_item:
         return error_response(404, f"Event '{event_id}' does not exist")
+
+    capacity = event_item.get("capacity")
+    if capacity is not None:
+        try:
+            capacity_int = int(capacity)
+        except (TypeError, ValueError):
+            capacity_int = None
+        if capacity_int is not None and _count_registrations(event_id) >= capacity_int:
+            return error_response(409, "This event is full")
 
     # --- Save the registration ---------------------------------------------
     registrations_table = dynamodb.Table(REGISTRATIONS_TABLE)
@@ -299,4 +407,4 @@ def handler(event, context):
         event_date=event_date,
     )
 
-    return build_response(201, {"message": "Registration successful", "registration": item})
+    return build_response(201, {"message": "Registration successful", "registration": _public_registration(item)})

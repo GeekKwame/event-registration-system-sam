@@ -1,32 +1,10 @@
 /**
- * Event-Connect — Frontend Application
- * Universal Multi-API Event Manager & Ticketing Hub
- *
- * Connects to AWS SAM API Gateway & Lambda handlers.
- * All business logic (fetch, register, cancel, CORS fallback) is preserved.
+ * Event-Connect frontend
+ * Calls same-origin /api paths on CloudFront. API Gateway URLs are never used in the browser.
  */
 
-// ============================================================
-// Constants & Storage Keys
-// ============================================================
-const STORAGE_KEY_API_URL = 'eventpulse_api_url';
 const STORAGE_KEY_LAST_EMAIL = 'eventpulse_last_registration_email';
-const STORAGE_KEY_LOCAL_REGS = 'eventpulse_local_registrations_store';
-
-const HUB_API_URL = 'https://wd1cfi2292.execute-api.us-west-1.amazonaws.com/Prod';
-const DEFAULT_API_URL = HUB_API_URL;
-
-// ============================================================
-// Utility Functions
-// ============================================================
-
-function normalizeApiUrl(value) {
-  let url = String(value || '').trim().replace(/[,\s]+$/, '').replace(/\/+$/, '');
-  if (url.includes('wd1cfi2292.execute-api.us-west-1.amazonaws.com/dev')) {
-    url = url.replace('/dev', '/Prod');
-  }
-  return url;
-}
+const API_BASE = '/api';
 
 function unwrapApiPayload(payload) {
   if (payload && typeof payload.body === 'string') {
@@ -35,140 +13,30 @@ function unwrapApiPayload(payload) {
   return payload;
 }
 
-function getLocalRegistrations() {
-  try { return JSON.parse(localStorage.getItem(STORAGE_KEY_LOCAL_REGS) || '[]'); }
-  catch { return []; }
-}
-
-function currentApiKey() {
-  return normalizeApiUrl(localStorage.getItem(STORAGE_KEY_API_URL) || '');
-}
-
-function saveLocalRegistration(reg) {
-  const regs = getLocalRegistrations();
-  if (!regs.some(r => r.registrationId === reg.registrationId)) {
-    regs.push({ ...reg, apiUrl: currentApiKey() });
-    localStorage.setItem(STORAGE_KEY_LOCAL_REGS, JSON.stringify(regs));
-  }
-}
-
-/** Cached registrations made against the currently connected API only ('' = demo mode). */
-function localRegistrationsForCurrentApi() {
-  return getLocalRegistrations().filter(r => normalizeApiUrl(r.apiUrl || '') === currentApiKey());
-}
-
-function removeLocalRegistration(regId) {
-  const regs = getLocalRegistrations().filter(r => r.registrationId !== regId);
-  localStorage.setItem(STORAGE_KEY_LOCAL_REGS, JSON.stringify(regs));
-}
-
-/** Drop local-only cache entries that the API already returned. */
-function reconcileLocalRegistrations(remoteRegs) {
-  const remoteIds = new Set(
-    (remoteRegs || [])
-      .map(r => String(r.registrationId || r.registration_id || r.id || '').trim())
-      .filter(Boolean)
-  );
-  const remoteKeys = new Set(
-    (remoteRegs || []).map(r => {
-      const email = String(r.email || '').toLowerCase();
-      const eventId = String(r.eventId || r.event_id || r.sourceEventId || '').trim();
-      return `${email}|${eventId}`;
-    })
-  );
-  const kept = getLocalRegistrations().filter(r => {
-    // Never prune another API's cache — evt ids like "evt-001" repeat across APIs.
-    if (normalizeApiUrl(r.apiUrl || '') !== currentApiKey()) return true;
-    const id = String(r.registrationId || r.registration_id || r.id || '').trim();
-    if (id && remoteIds.has(id)) return false;
-    const key = `${String(r.email || '').toLowerCase()}|${String(r.eventId || r.event_id || r.sourceEventId || '').trim()}`;
-    return !remoteKeys.has(key);
+async function apiFetch(path, options = {}) {
+  const response = await fetch(`${API_BASE}${path}`, {
+    ...options,
+    headers: {
+      Accept: 'application/json',
+      ...(options.body ? { 'Content-Type': 'application/json' } : {}),
+      ...(options.headers || {}),
+    },
   });
-  localStorage.setItem(STORAGE_KEY_LOCAL_REGS, JSON.stringify(kept));
+  let payload = {};
+  try {
+    payload = unwrapApiPayload(await response.json());
+  } catch {
+    payload = {};
+  }
+  if (!response.ok) {
+    const error = new Error(payload.error || payload.message || `Request failed (${response.status})`);
+    error.status = response.status;
+    error.payload = payload;
+    throw error;
+  }
+  return payload;
 }
 
-/**
- * Resilient fetch with CORS proxy fallbacks for read-only requests.
- * POST/DELETE always use a direct fetch — proxies cannot reliably forward mutations.
- */
-async function fetchWithCorsFallback(url, options = {}) {
-  const method = String(options.method || 'GET').toUpperCase();
-  const isMutation = method !== 'GET' && method !== 'HEAD';
-
-  try {
-    const res = await fetch(url, options);
-    if (res.ok || isMutation) return res;
-  } catch (err) {
-    if (isMutation) throw err;
-    console.warn(`Direct fetch to ${url} failed. Trying CORS fallback...`, err);
-  }
-
-  if (isMutation) {
-    throw new Error('Network request failed');
-  }
-
-  // Proxy Fallback 1: corsproxy.io (GET only)
-  try {
-    const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(url)}`;
-    const proxyRes = await fetch(proxyUrl, options);
-    if (proxyRes.ok) return proxyRes;
-  } catch (e) {
-    console.warn('corsproxy.io fallback failed:', e);
-  }
-
-  // Proxy Fallback 2: api.allorigins.win (GET only)
-  try {
-    const allOriginsUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`;
-    const allRes = await fetch(allOriginsUrl);
-    if (allRes.ok) {
-      const data = await allRes.json();
-      if (data && data.contents) {
-        let parsed = data.contents;
-        try {
-          if (typeof data.contents === 'string') parsed = JSON.parse(data.contents);
-        } catch {}
-        return {
-          ok: true,
-          status: 200,
-          json: async () => parsed,
-          text: async () => typeof data.contents === 'string' ? data.contents : JSON.stringify(data.contents)
-        };
-      }
-    }
-  } catch (e) {
-    console.warn('AllOrigins fallback failed:', e);
-  }
-
-  throw new Error('Unable to reach API');
-}
-
-// ============================================================
-// Mock Data (offline / demo mode)
-// ============================================================
-const MOCK_EVENTS = [
-  {
-    eventId: 'evt-101', event_id: 'evt-101',
-    name: 'AWS Cloud Tech Summit 2026',
-    date: '2026-09-15', capacity: 150, registeredCount: 42,
-    description: 'Explore the latest in serverless architectures, DynamoDB optimizations, and AI integration on AWS.'
-  },
-  {
-    eventId: 'evt-102', event_id: 'evt-102',
-    name: 'Serverless Python Masterclass',
-    date: '2026-10-01', capacity: 80, registeredCount: 78,
-    description: 'Deep dive into building high-throughput Python 3.12 Lambdas and Infrastructure-as-Code with SAM.'
-  },
-  {
-    eventId: 'evt-103', event_id: 'evt-103',
-    name: 'DevOps & CI/CD Pipeline Workshop',
-    date: '2026-10-20', capacity: 50, registeredCount: 15,
-    description: 'Hands-on training for GitHub Actions OIDC deployment to AWS without static access keys.'
-  }
-];
-
-// ============================================================
-// SVG Icon Templates
-// ============================================================
 const ICONS = {
   calendar: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>',
   location: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"/><path d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"/></svg>',
@@ -177,50 +45,33 @@ const ICONS = {
   error: '<svg class="toast-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><path d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>'
 };
 
-// ============================================================
-// Application Class
-// ============================================================
 class EventPulseApp {
   constructor() {
-    this.apiUrl = normalizeApiUrl(localStorage.getItem(STORAGE_KEY_API_URL) || DEFAULT_API_URL);
     this.events = [];
     this.allRegistrations = [];
     this.currentSearchEmail = '';
-    this.currentSearchQuery = '';
     this._pendingConfirm = null;
-    /** In-memory seat deltas for registrations made this session before API counts refresh. */
-    this.sessionSeatDeltas = {};
-
     this.initElements();
     this.bindEvents();
     this.initApp();
   }
 
-  // ----------------------------------------------------------
-  // DOM References
-  // ----------------------------------------------------------
   initElements() {
-    this.apiUrlInput = document.getElementById('api-url-input');
-    this.btnSaveApiUrl = document.getElementById('btn-save-api-url');
     this.apiStatusBadge = document.getElementById('api-status-badge');
     this.apiStatusText = document.getElementById('api-status-text');
-
     this.tabButtons = document.querySelectorAll('.tab-btn');
     this.tabContents = document.querySelectorAll('.tab-content');
-
     this.btnRefreshEvents = document.getElementById('btn-refresh-events');
     this.eventsLoading = document.getElementById('events-loading');
     this.eventsGrid = document.getElementById('events-grid');
     this.eventsEmpty = document.getElementById('events-empty');
     this.eventsEmptyMessage = document.getElementById('events-empty-message');
-
     this.formSearchEmail = document.getElementById('form-search-email');
     this.searchEmailInput = document.getElementById('search-email-input');
     this.btnClearSearch = document.getElementById('btn-clear-search');
     this.regsLoading = document.getElementById('regs-loading');
     this.regsList = document.getElementById('regs-list');
     this.regsEmpty = document.getElementById('regs-empty');
-
     this.registerModal = document.getElementById('register-modal');
     this.modalEventTitle = document.getElementById('modal-event-title');
     this.modalEventBadge = document.getElementById('modal-event-badge');
@@ -230,58 +81,31 @@ class EventPulseApp {
     this.regEmailInput = document.getElementById('reg-email-input');
     this.btnCloseModal = document.getElementById('btn-close-modal');
     this.btnCancelModal = document.getElementById('btn-cancel-modal');
-
     this.confirmDialog = document.getElementById('confirm-dialog');
     this.confirmDialogMessage = document.getElementById('confirm-dialog-message');
     this.btnConfirmYes = document.getElementById('confirm-dialog-confirm');
     this.btnConfirmNo = document.getElementById('confirm-dialog-cancel');
-
     this.tabRegCount = document.getElementById('tab-reg-count');
   }
 
-  // ----------------------------------------------------------
-  // Event Binding
-  // ----------------------------------------------------------
   bindEvents() {
-    // API connect
-    this.btnSaveApiUrl.addEventListener('click', () => {
-      const url = normalizeApiUrl(this.apiUrlInput.value);
-      this.setApiUrl(url);
-      this.checkApiStatusAndFetch();
-    });
-
-    this.apiUrlInput.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') {
-        e.preventDefault();
-        this.btnSaveApiUrl.click();
-      }
-    });
-
-    // Tab navigation
     this.tabButtons.forEach(btn => {
       btn.addEventListener('click', () => {
-        const targetId = btn.getAttribute('data-tab');
-        this.switchTab(targetId, btn);
+        this.switchTab(btn.getAttribute('data-tab'), btn);
       });
     });
 
-    // Refresh events
     this.btnRefreshEvents.addEventListener('click', () => this.fetchEvents());
-
-    // Registration form
     this.formRegister.addEventListener('submit', (e) => {
       e.preventDefault();
       this.submitRegistration();
     });
-
-    // Modal close
     this.btnCloseModal.addEventListener('click', () => this.closeModal());
     this.btnCancelModal.addEventListener('click', () => this.closeModal());
     this.registerModal.addEventListener('click', (e) => {
       if (e.target === this.registerModal) this.closeModal();
     });
 
-    // Escape to close modals
     document.addEventListener('keydown', (e) => {
       if (e.key === 'Escape') {
         if (!this.registerModal.classList.contains('hidden')) this.closeModal();
@@ -289,102 +113,31 @@ class EventPulseApp {
       }
     });
 
-    // Preset buttons — connect directly to selected API Gateway URL
-    this.presetButtons = document.querySelectorAll('.btn-preset');
-    this.presetButtons.forEach(btn => {
-      btn.addEventListener('click', () => {
-        const url = normalizeApiUrl(btn.getAttribute('data-url') || DEFAULT_API_URL);
-        this.apiUrlInput.value = url;
-        this.setApiUrl(url);
-        this.syncPresetButtons();
-        this.checkApiStatusAndFetch();
-      });
-    });
-
-    // Search registrations
     this.formSearchEmail.addEventListener('submit', (e) => {
       e.preventDefault();
-      const query = (this.searchEmailInput.value || '').trim();
-      this.fetchRegistrations(query);
+      this.fetchRegistrations((this.searchEmailInput.value || '').trim());
     });
 
-    if (this.btnClearSearch) {
-      this.btnClearSearch.addEventListener('click', () => {
-        this.searchEmailInput.value = '';
-        this.fetchRegistrations('');
-      });
-    }
+    this.btnClearSearch.addEventListener('click', () => {
+      this.searchEmailInput.value = '';
+      this.currentSearchEmail = '';
+      this.allRegistrations = [];
+      this.renderRegistrations([]);
+    });
 
-    // Real-time search filtering
-    if (this.searchEmailInput) {
-      this.searchEmailInput.addEventListener('input', () => {
-        const query = (this.searchEmailInput.value || '').trim();
-        this.filterAndRenderRegistrations(query);
-      });
-    }
-
-    // Confirmation dialog buttons
-    if (this.btnConfirmYes) {
-      this.btnConfirmYes.addEventListener('click', () => this.closeConfirmDialog(true));
-    }
-    if (this.btnConfirmNo) {
-      this.btnConfirmNo.addEventListener('click', () => this.closeConfirmDialog(false));
-    }
-    if (this.confirmDialog) {
-      this.confirmDialog.addEventListener('click', (e) => {
-        if (e.target === this.confirmDialog) this.closeConfirmDialog(false);
-      });
-    }
+    this.btnConfirmYes.addEventListener('click', () => this.closeConfirmDialog(true));
+    this.btnConfirmNo.addEventListener('click', () => this.closeConfirmDialog(false));
+    this.confirmDialog.addEventListener('click', (e) => {
+      if (e.target === this.confirmDialog) this.closeConfirmDialog(false);
+    });
   }
 
-  // ----------------------------------------------------------
-  // Initialization
-  // ----------------------------------------------------------
   initApp() {
-    if (this.apiUrl) {
-      this.apiUrlInput.value = this.apiUrl;
-    }
-    this.syncPresetButtons();
-
-    if (window.location.protocol === 'file:') {
-      this.showToast(
-        'Opened from a local file — register/cancel may fail. Use a local server or GitHub Pages for full API access.',
-        'error'
-      );
-    }
-
-    this.checkApiStatusAndFetch();
+    const lastEmail = localStorage.getItem(STORAGE_KEY_LAST_EMAIL) || '';
+    if (lastEmail) this.searchEmailInput.value = lastEmail;
+    this.fetchEvents();
   }
 
-  syncPresetButtons() {
-    if (!this.presetButtons) return;
-    this.presetButtons.forEach(btn => {
-      const btnUrl = normalizeApiUrl(btn.getAttribute('data-url'));
-      btn.classList.toggle('active', btnUrl === this.apiUrl);
-    });
-  }
-
-  setEmptyStateMessage(message) {
-    if (this.eventsEmptyMessage) {
-      this.eventsEmptyMessage.textContent = message;
-    }
-  }
-
-  // ----------------------------------------------------------
-  // API URL Management
-  // ----------------------------------------------------------
-  setApiUrl(url) {
-    this.apiUrl = url;
-    if (url) {
-      localStorage.setItem(STORAGE_KEY_API_URL, url);
-    } else {
-      localStorage.removeItem(STORAGE_KEY_API_URL);
-    }
-  }
-
-  // ----------------------------------------------------------
-  // Tab Navigation
-  // ----------------------------------------------------------
   switchTab(targetSectionId, activeBtn) {
     this.tabButtons.forEach(btn => {
       btn.classList.remove('active');
@@ -394,7 +147,6 @@ class EventPulseApp {
       content.classList.remove('active');
       content.classList.add('hidden');
     });
-
     activeBtn.classList.add('active');
     activeBtn.setAttribute('aria-selected', 'true');
     const targetSection = document.getElementById(targetSectionId);
@@ -402,30 +154,10 @@ class EventPulseApp {
       targetSection.classList.remove('hidden');
       targetSection.classList.add('active');
     }
-
     if (targetSectionId === 'section-my-registrations') {
-      const query = (this.searchEmailInput.value || '').trim();
-      this.fetchRegistrations(query);
+      const email = (this.searchEmailInput.value || '').trim();
+      if (email.includes('@')) this.fetchRegistrations(email);
     }
-  }
-
-  // ----------------------------------------------------------
-  // API Status Check + Initial Fetch (single network round-trip)
-  // ----------------------------------------------------------
-  async checkApiStatusAndFetch() {
-    this.updateStatusBadge('connecting', 'Connecting…');
-
-    if (!this.apiUrl) {
-      this.updateStatusBadge('disconnected', 'Demo Mode');
-      this.events = MOCK_EVENTS;
-      this.renderEvents(MOCK_EVENTS);
-      return;
-    }
-
-    // fetchEvents() itself talks to the API and now owns setting the
-    // connected/disconnected badge based on the real outcome, so we no
-    // longer make a separate throwaway request here before it.
-    await this.fetchEvents();
   }
 
   updateStatusBadge(state, text) {
@@ -433,92 +165,53 @@ class EventPulseApp {
     this.apiStatusText.textContent = text;
   }
 
-  // ----------------------------------------------------------
-  // Fetch & Normalize Events
-  // ----------------------------------------------------------
   async fetchEvents() {
     this.eventsLoading.classList.remove('hidden');
     this.eventsGrid.classList.add('hidden');
     this.eventsEmpty.classList.add('hidden');
-
-    if (!this.apiUrl) {
-      setTimeout(() => {
-        this.eventsLoading.classList.add('hidden');
-        this.events = MOCK_EVENTS;
-        this.renderEvents(MOCK_EVENTS);
-      }, 300);
-      return;
-    }
+    this.updateStatusBadge('connecting', 'Connecting…');
 
     try {
-      this.setEmptyStateMessage('Connect an API endpoint or check your network connection to load events.');
-      const res = await fetchWithCorsFallback(`${this.apiUrl}/events`);
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data = unwrapApiPayload(await res.json());
-      const rawList = Array.isArray(data) ? data : (data.events || data.data || data.items || data.results || []);
-
+      const data = await apiFetch('/events');
+      const rawList = Array.isArray(data) ? data : (data.events || []);
       this.events = rawList.map(item => {
-        const id = String(item.eventId || item.event_id || item.id || item._id || '').trim();
+        const id = String(item.eventId || item.event_id || item.id || '').trim();
         const name = String(item.eventName || item.name || item.title || 'Untitled Event').trim();
-        const sourceId = String(item.sourceEventId || item.source_event_id || id).trim();
-        const capacity = Number(item.capacity ?? item.max_capacity ?? item.total_seats ?? item.totalSeats ?? item.seats ?? 100);
-
-        let apiRegCount = 0;
-        if (item.registeredCount !== undefined || item.registered_count !== undefined || item.attendees !== undefined || item.attendeeCount !== undefined) {
-          apiRegCount = Number(item.registeredCount ?? item.registered_count ?? item.attendees ?? item.attendeeCount ?? 0);
-        } else if (item.availableSeats !== undefined || item.available_seats !== undefined || item.availableSpots !== undefined || item.available_spots !== undefined) {
-          const avail = Number(item.availableSeats ?? item.available_seats ?? item.availableSpots ?? item.available_spots ?? capacity);
-          apiRegCount = Math.max(capacity - avail, 0);
-        }
-
-        // Server API Gateway apiRegCount is authoritative when connected to API Gateway.
-        // Fall back to local storage count only when running in offline/demo mode.
-        const totalRegCount = this.apiUrl ? apiRegCount : getLocalRegistrationCount(id, sourceId);
-        const locationStr = item.location || item.venue || item.address || item.place || '';
-        const dateStr = item.date ? (item.time ? `${item.date} (${item.time})` : item.date) : 'TBD';
-
+        const capacity = Number(item.capacity ?? item.max_capacity ?? item.total_seats ?? 100);
+        const apiRegCount = Number(item.registeredCount ?? item.registered_count ?? item.attendees ?? 0);
         return {
           ...item,
-          eventId: id, event_id: id, id: id,
-          eventName: name, name: name,
-          location: locationStr,
-          date: dateStr,
-          providerId: item.providerId || item.provider_id || '',
-          sourceEventId: sourceId,
-          capacity: capacity,
-          registeredCount: totalRegCount
+          eventId: id,
+          eventName: name,
+          name,
+          location: item.location || item.venue || '',
+          date: item.date ? (item.time ? `${item.date} (${item.time})` : item.date) : 'TBD',
+          providerId: item.providerId || '',
+          sourceEventId: item.sourceEventId || id,
+          capacity,
+          registeredCount: apiRegCount,
         };
       });
-
-      this.updateStatusBadge('connected', 'Connected');
+      this.updateStatusBadge('connected', 'Live');
       this.renderEvents(this.events);
     } catch (err) {
       console.error('Error fetching events:', err);
-      this.updateStatusBadge('disconnected', 'Connection Failed');
-      this.showToast('Failed to load events from API Gateway', 'error');
+      this.updateStatusBadge('disconnected', 'Unavailable');
+      this.showToast('Could not load events', 'error');
       this.events = [];
-      this.setEmptyStateMessage(
-        'Could not reach the API. Check the URL, network connection, and that the API stage path is correct (e.g. /Prod).'
-      );
+      this.eventsEmptyMessage.textContent = 'The event service is unavailable. Refresh to try again.';
       this.renderEvents([]);
     } finally {
       this.eventsLoading.classList.add('hidden');
     }
   }
 
-  // ----------------------------------------------------------
-  // Render Events Grid
-  // ----------------------------------------------------------
   renderEvents(eventsList) {
     this.eventsGrid.innerHTML = '';
-    this.eventsLoading.classList.add('hidden');
     this.updateCapacityStory(eventsList);
 
     if (!eventsList || eventsList.length === 0) {
       this.eventsGrid.classList.add('hidden');
-      if (this.providerFilter && this.events.length > 0) {
-        this.setEmptyStateMessage('No events matched this provider filter. Try "All providers".');
-      }
       this.eventsEmpty.classList.remove('hidden');
       return;
     }
@@ -529,45 +222,28 @@ class EventPulseApp {
     eventsList.forEach(evt => {
       const card = document.createElement('div');
       card.className = 'event-card';
-
-      const eventId = evt.eventId || evt.event_id || evt.id || evt._id || 'N/A';
-      const eventName = evt.eventName || evt.name || evt.title || 'Untitled Event';
-      const regCount = Number(evt.registeredCount ?? evt.registered_count ?? evt.attendees ?? evt.attendeeCount ?? 0);
-      const capacity = Number(evt.capacity ?? evt.max_capacity ?? evt.total_seats ?? 100);
-      const isFull = regCount >= capacity;
-      const dateStr = evt.date || 'TBD';
-      const locationStr = evt.location || '';
-
-      // Capacity bar
+      const eventId = evt.eventId || 'N/A';
+      const eventName = evt.eventName || 'Untitled Event';
+      const regCount = Number(evt.registeredCount || 0);
+      const capacity = Number(evt.capacity || 100);
+      const isFull = capacity > 0 && regCount >= capacity;
       const pct = capacity > 0 ? Math.min((regCount / capacity) * 100, 100) : 0;
       const capClass = pct >= 90 ? 'cap-high' : pct >= 60 ? 'cap-mid' : 'cap-low';
-
-      // Provider badge
-      const providerId = String(evt.providerId || evt.provider_id || '').toLowerCase();
-      let providerBadge = '<span class="badge badge-provider-local">Local</span>';
-      if (providerId.includes('gloria')) {
-        providerBadge = '<span class="badge badge-provider-gloria">Gloria</span>';
-      } else if (providerId.includes('accra') || providerId.includes('dawuni')) {
-        providerBadge = '<span class="badge badge-provider-dawuni">Dawuni</span>';
-      }
-
-      // Description
-      const desc = evt.description || evt.summary || (locationStr ? `Location: ${locationStr}` : 'No description available.');
+      const desc = evt.description || evt.summary || (evt.location ? `Location: ${evt.location}` : 'No description available.');
 
       card.innerHTML = `
         <div>
           <div class="event-card-header">
             <h3 class="event-card-title">${this.escapeHtml(eventName)}</h3>
             <div class="event-card-badges">
-              ${providerBadge}
               <span class="badge ${isFull ? 'badge-danger' : 'badge-success'}">${isFull ? 'Full' : 'Open'}</span>
             </div>
           </div>
           <p class="event-card-desc">${this.escapeHtml(desc)}</p>
           <div class="event-card-meta">
-            <div class="meta-item">${ICONS.calendar}<span>${dateStr}</span></div>
-            ${locationStr ? `<div class="meta-item">${ICONS.location}<span>${this.escapeHtml(locationStr)}</span></div>` : ''}
-            <div class="meta-item">${ICONS.id}<span>${eventId}</span></div>
+            <div class="meta-item">${ICONS.calendar}<span>${this.escapeHtml(evt.date || 'TBD')}</span></div>
+            ${evt.location ? `<div class="meta-item">${ICONS.location}<span>${this.escapeHtml(evt.location)}</span></div>` : ''}
+            <div class="meta-item">${ICONS.id}<span>${this.escapeHtml(eventId)}</span></div>
           </div>
           <div class="capacity-bar-track" aria-label="Capacity: ${regCount} of ${capacity}">
             <div class="capacity-bar-fill ${capClass}" style="width: ${pct}%"></div>
@@ -585,22 +261,18 @@ class EventPulseApp {
       if (regBtn && !isFull) {
         regBtn.addEventListener('click', () => this.openRegisterModal(evt));
       }
-
       this.eventsGrid.appendChild(card);
     });
   }
 
-  // ----------------------------------------------------------
-  // Update Capacity Stats
-  // ----------------------------------------------------------
   updateCapacityStory(eventsList) {
     const events = Array.isArray(eventsList) ? eventsList : [];
     const totalCapacity = events.reduce((sum, event) => sum + Number(event.capacity || 100), 0);
-    const totalRegistered = events.reduce((sum, event) => sum + Number(event.registeredCount ?? event.registered_count ?? 0), 0);
+    const totalRegistered = events.reduce((sum, event) => sum + Number(event.registeredCount || 0), 0);
     const available = Math.max(totalCapacity - totalRegistered, 0);
     const message = events.length
       ? `${available > 0 ? `${available} seats are still open` : 'Every event is at capacity'} — pick your moment.`
-      : 'Connect an event source to see live availability.';
+      : 'Event availability will appear here once the catalog loads.';
 
     document.getElementById('hero-available-seats').textContent = events.length ? available : '—';
     document.getElementById('hero-events-count').textContent = events.length ? `${events.length} live events` : 'No live events';
@@ -610,35 +282,19 @@ class EventPulseApp {
     document.getElementById('capacity-message').textContent = message;
   }
 
-  // ----------------------------------------------------------
-  // Registration Modal
-  // ----------------------------------------------------------
   openRegisterModal(evt) {
-    const eventId = String(evt.eventId || evt.event_id || evt.id || evt._id || '').trim();
-    const name = String(evt.eventName || evt.name || evt.title || 'Event Registration').trim();
-    this.selectedProviderId = String(evt.providerId || evt.provider_id || '').trim();
-    this.selectedSourceEventId = String(evt.sourceEventId || evt.source_event_id || eventId).trim();
-    this.modalEventTitle.textContent = name;
+    const eventId = String(evt.eventId || '').trim();
+    this.selectedProviderId = String(evt.providerId || '').trim();
+    this.selectedSourceEventId = String(evt.sourceEventId || eventId).trim();
+    this.modalEventTitle.textContent = String(evt.eventName || 'Event Registration').trim();
     this.modalEventBadge.textContent = `Event ID: ${eventId || 'N/A'}`;
     this.modalEventId.value = eventId;
     this.regNameInput.value = '';
-
-    // Pre-fill email from last registration
-    const lastEmail = localStorage.getItem(STORAGE_KEY_LAST_EMAIL) || '';
-    this.regEmailInput.value = lastEmail;
-
+    this.regEmailInput.value = localStorage.getItem(STORAGE_KEY_LAST_EMAIL) || '';
     this.registerModal.classList.remove('hidden');
     document.body.classList.add('modal-open');
-
-    // Focus first empty input
     setTimeout(() => {
-      if (this.regNameInput.value === '') {
-        this.regNameInput.focus();
-      } else if (this.regEmailInput.value === '') {
-        this.regEmailInput.focus();
-      } else {
-        this.regNameInput.focus();
-      }
+      (this.regNameInput.value ? this.regEmailInput : this.regNameInput).focus();
     }, 100);
   }
 
@@ -647,9 +303,6 @@ class EventPulseApp {
     document.body.classList.remove('modal-open');
   }
 
-  // ----------------------------------------------------------
-  // Confirmation Dialog
-  // ----------------------------------------------------------
   showConfirmDialog(message) {
     return new Promise((resolve) => {
       this.confirmDialogMessage.textContent = message;
@@ -669,254 +322,65 @@ class EventPulseApp {
     }
   }
 
-  // ----------------------------------------------------------
-  // Submit Registration
-  // ----------------------------------------------------------
   async submitRegistration() {
     const eventId = this.modalEventId.value;
     const name = this.regNameInput.value.trim();
     const email = this.regEmailInput.value.trim();
-
     if (!eventId || !name || !email) return;
 
     this.closeModal();
-
-    if (!this.apiUrl) {
-      const demoRegId = `reg-demo-${Date.now()}`;
-      saveLocalRegistration({
-        registrationId: demoRegId, eventId, event_id: eventId,
-        sourceEventId: this.selectedSourceEventId || eventId,
-        email, name, createdAt: new Date().toISOString()
-      });
-      this.adjustSessionSeatDelta(eventId, 1);
-      localStorage.setItem(STORAGE_KEY_LAST_EMAIL, email);
-      this.currentSearchEmail = email;
-      this.searchEmailInput.value = email;
-      this.showToast(`Registered successfully for ${eventId}! (Demo Mode)`, 'success');
-      this.fetchEvents();
-      return;
-    }
-
     try {
-      const targetUrl = this.apiUrl || HUB_API_URL;
-      let response;
-      try {
-        response = await fetch(`${targetUrl}/register`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            eventId, event_id: eventId, id: eventId,
-            providerId: this.selectedProviderId || undefined,
-            sourceEventId: this.selectedSourceEventId || undefined,
-            name, email
-          })
-        });
-      } catch (directErr) {
-        if (targetUrl !== HUB_API_URL) {
-          response = await fetch(`${HUB_API_URL}/register`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              eventId, event_id: eventId, id: eventId,
-              providerId: this.selectedProviderId || undefined,
-              sourceEventId: this.selectedSourceEventId || undefined,
-              name, email
-            })
-          });
-        } else {
-          throw directErr;
-        }
-      }
-
-      const result = unwrapApiPayload(await response.json());
-      if (response.ok) {
-        const registration = result.registration || result.data || result;
-        const regId = registration.registrationId || registration.registration_id || registration.id || result.registration_id || result.registrationId || 'OK';
-
-        saveLocalRegistration({
-          registrationId: regId, eventId, event_id: eventId,
-          sourceEventId: this.selectedSourceEventId || eventId,
-          email, name, createdAt: new Date().toISOString()
-        });
-
-        localStorage.setItem(STORAGE_KEY_LAST_EMAIL, email);
-        this.currentSearchEmail = email;
-        this.searchEmailInput.value = email;
-        this.showToast(`Registration confirmed! ID: ${regId}`, 'success');
-        this.fetchEvents();
-      } else {
-        this.showToast(result.error || result.message || 'Registration failed', 'error');
-      }
+      const result = await apiFetch('/register', {
+        method: 'POST',
+        body: JSON.stringify({
+          eventId,
+          providerId: this.selectedProviderId || undefined,
+          sourceEventId: this.selectedSourceEventId || undefined,
+          name,
+          email,
+        }),
+      });
+      const registration = result.registration || result;
+      const regId = registration.registrationId || registration.id || 'OK';
+      localStorage.setItem(STORAGE_KEY_LAST_EMAIL, email);
+      this.searchEmailInput.value = email;
+      this.showToast(`Registration confirmed. Ticket ${regId}`, 'success');
+      this.fetchEvents();
     } catch (err) {
-      console.error('Registration error:', err);
-      this.showToast('Error connecting to API Gateway', 'error');
+      this.showToast(err.message || 'Registration failed', 'error');
     }
   }
 
-  // ----------------------------------------------------------
-  // Fetch Registrations
-  // ----------------------------------------------------------
   async fetchRegistrations(query = '') {
-    this.currentSearchQuery = String(query || '').trim();
+    const email = String(query || '').trim().toLowerCase();
+    this.currentSearchEmail = email;
     this.regsLoading.classList.remove('hidden');
     this.regsList.classList.add('hidden');
     this.regsEmpty.classList.add('hidden');
 
-    if (!this.apiUrl) {
-      setTimeout(() => {
-        this.regsLoading.classList.add('hidden');
-        const mockRegs = [
-          { registrationId: 'reg-demo-99', eventId: 'evt-101', name: 'Alex Johnson', email: 'alex@example.com', timestamp: new Date().toISOString() },
-          { registrationId: 'reg-demo-100', eventId: 'evt-102', name: 'Sarah Connor', email: 'sarah@example.com', timestamp: new Date().toISOString() }
-        ];
-        // Merge in whatever the user has actually registered for locally
-        // in this session — otherwise demo-mode sign-ups vanished from
-        // "My Registrations" the moment you switched tabs.
-        const localRegs = localRegistrationsForCurrentApi();
-        const seen = new Set();
-        this.allRegistrations = [...localRegs, ...mockRegs].filter(r => {
-          const id = r.registrationId || r.registration_id || r.id;
-          if (id && seen.has(id)) return false;
-          if (id) seen.add(id);
-          return true;
-        });
-        this.filterAndRenderRegistrations(this.currentSearchQuery);
-      }, 300);
+    if (!email.includes('@')) {
+      this.regsLoading.classList.add('hidden');
+      this.allRegistrations = [];
+      this.renderRegistrations([]);
       return;
     }
 
     try {
-      let remoteRegs = [];
-      let parentEmail = '';
-
-      try {
-        const resAll = await fetchWithCorsFallback(`${this.apiUrl}/registrations/all`);
-        if (resAll.ok) {
-          const dataAll = unwrapApiPayload(await resAll.json());
-          remoteRegs = Array.isArray(dataAll) ? dataAll : (dataAll.registrations || dataAll.data || dataAll.items || dataAll.results || []);
-          if (dataAll && dataAll.email && dataAll.email !== 'all') parentEmail = dataAll.email;
-        }
-      } catch (e) {
-        console.warn('Could not fetch /registrations/all:', e);
-      }
-
-      if (this.currentSearchQuery && this.currentSearchQuery.includes('@')) {
-        try {
-          const resDirect = await fetchWithCorsFallback(`${this.apiUrl}/registrations/${encodeURIComponent(this.currentSearchQuery)}`);
-          if (resDirect.ok) {
-            const dataDirect = unwrapApiPayload(await resDirect.json());
-            const directItems = Array.isArray(dataDirect) ? dataDirect : (dataDirect.registrations || dataDirect.data || dataDirect.items || dataDirect.results || []);
-            const directEmail = (dataDirect && dataDirect.email) || this.currentSearchQuery;
-            directItems.forEach(item => {
-              const itemEmail = item.email || directEmail;
-              remoteRegs.push({ ...item, email: itemEmail });
-            });
-          }
-        } catch (e) {
-          console.warn('Direct query failed:', e);
-        }
-      }
-
-      // If the API returned zero individual registration records but the
-      // events data shows registeredCount > 0, synthesize summary rows so
-      // the Registrations tab isn't misleadingly empty.  This handles
-      // external APIs (e.g. Gloria's) that track seat counts on events but
-      // don't expose discrete registration records from /registrations/all.
-      const localRegs = localRegistrationsForCurrentApi();
-
-      // Only synthesize summary rows if BOTH remote API records AND local registrations are empty.
-      // If real registrations exist (remote or local), do not inject dummy Attendee rows.
-      if (remoteRegs.length === 0 && localRegs.length === 0 && Array.isArray(this.events)) {
-        this.events.forEach(evt => {
-          const regCount = Number(evt.registeredCount ?? 0);
-          if (regCount > 0) {
-            for (let i = 0; i < regCount; i++) {
-              remoteRegs.push({
-                registrationId: `${evt.eventId}-attendee-${i + 1}`,
-                eventId: evt.eventId,
-                event_id: evt.event_id || evt.eventId,
-                eventName: evt.eventName || evt.name,
-                name: `Attendee ${i + 1}`,
-                email: '—',
-                status: 'confirmed',
-                _synthetic: true
-              });
-            }
-          }
-        });
-      }
-
-      const combinedMap = new Map();
-      [...remoteRegs, ...localRegs].forEach(item => {
-        const id = String(item.registrationId || item.registration_id || item.id || '').trim();
-        if (id && !combinedMap.has(id)) {
-          combinedMap.set(id, item);
-        } else if (!id) {
-          combinedMap.set(Math.random().toString(), item);
-        }
-      });
-      const combinedList = Array.from(combinedMap.values());
-
-      reconcileLocalRegistrations(remoteRegs);
-      this.allRegistrations = combinedList;
-      this.filterAndRenderRegistrations(this.currentSearchQuery, parentEmail);
+      const data = await apiFetch(`/registrations/${encodeURIComponent(email)}`);
+      this.allRegistrations = Array.isArray(data) ? data : (data.registrations || []);
+      this.renderRegistrations(this.allRegistrations, email);
     } catch (err) {
-      console.error('Error fetching registrations:', err);
-      this.showToast('Error querying registrations', 'error');
+      this.showToast(err.message || 'Could not look up registrations', 'error');
+      this.allRegistrations = [];
+      this.renderRegistrations([]);
     } finally {
       this.regsLoading.classList.add('hidden');
     }
   }
 
-  // ----------------------------------------------------------
-  // Filter & Render Registrations
-  // ----------------------------------------------------------
-  filterAndRenderRegistrations(query, defaultEmail = '') {
-    const q = String(query || '').trim().toLowerCase();
-    let list = this.allRegistrations || [];
-
-    if (q && q !== 'all') {
-      list = list.filter(reg => {
-        const email = String(reg.email || defaultEmail || '').toLowerCase();
-        const name = String(reg.name || '').toLowerCase();
-        const eventName = String(reg.eventName || '').toLowerCase();
-        const regId = String(reg.registrationId || reg.registration_id || reg.id || '').toLowerCase();
-        const evtId = String(reg.eventId || reg.event_id || reg.sourceEventId || '').toLowerCase();
-        return email.includes(q) || name.includes(q) || eventName.includes(q) || regId.includes(q) || evtId.includes(q);
-      });
-    }
-
-    this.renderRegistrations(list, defaultEmail);
-  }
-
-  // ----------------------------------------------------------
-  // Render Registration List
-  // ----------------------------------------------------------
   renderRegistrations(regsList, defaultEmail = '') {
     this.regsList.innerHTML = '';
-
     if (!regsList || regsList.length === 0) {
-      this.regsList.classList.add('hidden');
-      this.regsEmpty.classList.remove('hidden');
-      this.updateRegCount(0);
-      return;
-    }
-
-    // Deduplicate
-    const seenIds = new Set();
-    const uniqueList = [];
-    regsList.forEach(reg => {
-      const regId = String(reg.registrationId || reg.registration_id || reg.id || reg._id || '').trim();
-      const providerRegId = String(reg.providerRegistrationId || reg.provider_registration_id || '').trim();
-      const isSeen = (regId && seenIds.has(regId)) || (providerRegId && seenIds.has(providerRegId));
-      if (!isSeen) {
-        if (regId) seenIds.add(regId);
-        if (providerRegId) seenIds.add(providerRegId);
-        uniqueList.push(reg);
-      }
-    });
-
-    if (uniqueList.length === 0) {
       this.regsList.classList.add('hidden');
       this.regsEmpty.classList.remove('hidden');
       this.updateRegCount(0);
@@ -925,153 +389,72 @@ class EventPulseApp {
 
     this.regsEmpty.classList.add('hidden');
     this.regsList.classList.remove('hidden');
-    this.updateRegCount(uniqueList.length);
+    this.updateRegCount(regsList.length);
 
-    // Count header
     const countEl = document.createElement('div');
     countEl.className = 'regs-count';
-    countEl.textContent = `${uniqueList.length} registration${uniqueList.length !== 1 ? 's' : ''} found`;
+    countEl.textContent = `${regsList.length} registration${regsList.length !== 1 ? 's' : ''} found`;
     this.regsList.appendChild(countEl);
 
-    uniqueList.forEach(reg => {
+    regsList.forEach(reg => {
       const item = document.createElement('div');
       item.className = 'reg-item';
-
-      const regId = reg.registrationId || reg.registration_id || reg.id || reg._id || 'N/A';
-      const eventId = String(reg.eventId || reg.event_id || reg.sourceEventId || 'N/A').trim();
-
-      const normId = (id) => {
-        const s = String(id || '').trim();
-        if (s === 'evt-101') return 'evt-001';
-        if (s === 'evt-102') return 'evt-002';
-        return s;
-      };
-      const canonicalRegEvtId = normId(eventId);
-
-      const foundEvt = this.events.find(e => {
-        const eId = normId(e.eventId || e.event_id || e.id);
-        const sId = normId(e.sourceEventId || e.source_event_id);
-        return eId === canonicalRegEvtId || sId === canonicalRegEvtId;
-      });
-      const eventName = reg.eventName || (foundEvt ? (foundEvt.eventName || foundEvt.name) : null) || `Event: ${eventId}`;
-      const email = reg.email || defaultEmail || this.currentSearchEmail || 'N/A';
+      const regId = String(reg.registrationId || reg.id || 'N/A');
+      const eventId = String(reg.eventId || 'N/A');
+      const foundEvt = this.events.find(e => e.eventId === eventId);
+      const eventName = reg.eventName || (foundEvt && foundEvt.eventName) || `Event: ${eventId}`;
+      const email = reg.email || defaultEmail || 'N/A';
       const nameStr = reg.name ? String(reg.name).trim() : '';
-
-      // Avatar initials
       const initials = nameStr
         ? nameStr.split(' ').map(w => w[0]).join('').substring(0, 2).toUpperCase()
-        : email[0].toUpperCase();
-
-      const participantInfo = nameStr && nameStr.toLowerCase() !== 'participant'
-        ? `<strong>${this.escapeHtml(nameStr)}</strong> · ${this.escapeHtml(email)}`
-        : `<strong>${this.escapeHtml(email)}</strong>`;
-
+        : String(email)[0].toUpperCase();
       const dateVal = reg.createdAt || reg.registered_at || reg.timestamp;
 
       item.innerHTML = `
         <div class="reg-item-content">
-          <div class="reg-avatar" aria-hidden="true">${initials}</div>
+          <div class="reg-avatar" aria-hidden="true">${this.escapeHtml(initials)}</div>
           <div class="reg-info">
             <h4>${this.escapeHtml(eventName)}</h4>
             <div class="reg-meta">
-              <span>${participantInfo}</span>
+              <span><strong>${this.escapeHtml(nameStr || email)}</strong>${nameStr ? ` · ${this.escapeHtml(email)}` : ''}</span>
               <span>ID: <code>${this.escapeHtml(regId)}</code></span>
               ${dateVal ? `<span>${new Date(dateVal).toLocaleDateString()}</span>` : ''}
             </div>
           </div>
         </div>
-        <button class="btn btn-danger btn-cancel-reg" data-reg-id="${this.escapeHtml(regId)}">
-          Cancel
-        </button>
+        <button class="btn btn-danger btn-cancel-reg">Cancel</button>
       `;
-
-      const cancelBtn = item.querySelector('.btn-cancel-reg');
-      if (cancelBtn) {
-        cancelBtn.addEventListener('click', () => this.cancelRegistration(regId));
-      }
-
+      item.querySelector('.btn-cancel-reg').addEventListener('click', () => this.cancelRegistration(regId));
       this.regsList.appendChild(item);
     });
   }
 
   updateRegCount(count) {
-    if (this.tabRegCount) {
-      this.tabRegCount.textContent = count > 0 ? count : '';
-    }
+    if (this.tabRegCount) this.tabRegCount.textContent = count > 0 ? count : '';
   }
 
-  // ----------------------------------------------------------
-  // Cancel Registration
-  // ----------------------------------------------------------
   async cancelRegistration(registrationId) {
-    const regIdStr = String(registrationId || '').trim();
     const confirmed = await this.showConfirmDialog(
-      `Cancel registration ${regIdStr}? This action cannot be undone.`
+      `Cancel registration ${registrationId}? This action cannot be undone.`
     );
     if (!confirmed) return;
 
-    removeLocalRegistration(regIdStr);
-
-    const targetReg = this.allRegistrations.find(r =>
-      String(r.registrationId || r.registration_id || r.id || '') === regIdStr
-    );
-    const isSynthetic = regIdStr.includes('-attendee-') || (targetReg && targetReg._synthetic);
-
-    if (isSynthetic || !this.apiUrl) {
-      if (targetReg) {
-        this.adjustSessionSeatDelta(targetReg.eventId || targetReg.event_id, -1);
-      }
-      this.showToast('Registration cancelled successfully', 'success');
-      this.allRegistrations = this.allRegistrations.filter(r =>
-        String(r.registrationId || r.registration_id || r.id || '') !== regIdStr
-      );
-      this.filterAndRenderRegistrations(this.currentSearchQuery);
-      this.fetchEvents();
-      return;
-    }
-
     try {
-      const encodedId = encodeURIComponent(regIdStr);
-      const targetUrl = this.apiUrl || HUB_API_URL;
-      const res = await fetch(`${targetUrl}/registration/${encodedId}`, { method: 'DELETE' });
-
-      if (res.ok || res.status === 404) {
-        removeLocalRegistration(regIdStr);
-        this.allRegistrations = this.allRegistrations.filter(r =>
-          String(r.registrationId || r.registration_id || r.id || '') !== regIdStr
-        );
-        this.showToast('Registration cancelled successfully', 'success');
-        this.fetchEvents();
-        this.fetchRegistrations(this.currentSearchEmail);
-      } else {
-        const errData = unwrapApiPayload(await res.json());
-        this.showToast(errData.error || errData.message || 'Failed to cancel', 'error');
-      }
-    } catch (err) {
-      console.error('Cancel error:', err);
-      removeLocalRegistration(regIdStr);
-      this.allRegistrations = this.allRegistrations.filter(r =>
-        String(r.registrationId || r.registration_id || r.id || '') !== regIdStr
-      );
-      this.showToast('Registration cancelled successfully', 'success');
+      await apiFetch(`/registration/${encodeURIComponent(registrationId)}`, { method: 'DELETE' });
+      this.showToast('Registration cancelled', 'success');
       this.fetchEvents();
-      this.fetchRegistrations(this.currentSearchEmail);
+      if (this.currentSearchEmail) this.fetchRegistrations(this.currentSearchEmail);
+    } catch (err) {
+      this.showToast(err.message || 'Failed to cancel', 'error');
     }
   }
 
-  // ----------------------------------------------------------
-  // Toast Notifications
-  // ----------------------------------------------------------
   showToast(message, type = 'success') {
     const container = document.getElementById('toast-container');
     if (!container) return;
-
     const toast = document.createElement('div');
     toast.className = `toast toast-${type}`;
-
-    const icon = type === 'success' ? ICONS.check : ICONS.error;
-    toast.innerHTML = `${icon}<span>${this.escapeHtml(message)}</span>`;
-
+    toast.innerHTML = `${type === 'success' ? ICONS.check : ICONS.error}<span>${this.escapeHtml(message)}</span>`;
     container.appendChild(toast);
     setTimeout(() => {
       toast.style.opacity = '0';
@@ -1080,9 +463,6 @@ class EventPulseApp {
     }, 4000);
   }
 
-  // ----------------------------------------------------------
-  // Utilities
-  // ----------------------------------------------------------
   escapeHtml(str) {
     return String(str)
       .replace(/&/g, '&amp;')
@@ -1093,9 +473,6 @@ class EventPulseApp {
   }
 }
 
-// ============================================================
-// Initialize
-// ============================================================
 document.addEventListener('DOMContentLoaded', () => {
   window.app = new EventPulseApp();
 });
