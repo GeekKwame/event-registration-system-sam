@@ -16,6 +16,8 @@ Do not publish or paste API Gateway `execute-api` URLs into the frontend, README
 
 ## Architecture
 
+![Event-Connect production AWS architecture](docs/architecture.png)
+
 ```
 Browser
   └── CloudFront  (public HTTPS, security headers)

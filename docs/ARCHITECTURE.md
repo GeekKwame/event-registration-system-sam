@@ -4,6 +4,12 @@ Production traffic terminates at **Amazon CloudFront**. API Gateway is an origin
 
 ---
 
+## Official AWS architecture
+
+![Event-Connect production AWS architecture](architecture.png)
+
+---
+
 ## High-level architecture
 
 ```
@@ -79,5 +85,5 @@ Added for production:
 
 1. `GET /api/events` → `list_events.py`
 2. `POST /api/register` → `register.py` (capacity + duplicate checks)
-3. `GET /api/registrations/{email}` → `get_registrations.py` (no `/all` dump)
+3. `GET /api/registrations` and `GET /api/registrations/{email}` → `get_registrations.py`
 4. `DELETE /api/registration/{id}` → `cancel_registration.py`
