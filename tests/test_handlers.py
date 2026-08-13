@@ -31,6 +31,11 @@ def dynamodb_tables():
     os.environ["PROVIDERS_JSON"] = "[]"
     os.environ["ORIGIN_VERIFY_SECRET"] = ""
     os.environ["RESEND_SECRET_ARN"] = ""
+    os.environ["ADMIN_SECRET_ARN"] = ""
+    os.environ["ADMIN_PASSWORD"] = "test-admin-pass"
+    os.environ["ADMIN_TOKEN_KEY"] = "test-admin-token-key"
+    if "utils.security" in sys.modules:
+        sys.modules["utils.security"].reset_admin_config_cache()
     os.environ.setdefault("AWS_DEFAULT_REGION", "us-east-1")
     os.environ.setdefault("AWS_ACCESS_KEY_ID", "testing")
     os.environ.setdefault("AWS_SECRET_ACCESS_KEY", "testing")
@@ -63,6 +68,16 @@ def dynamodb_tables():
             Item={"eventId": "evt-001", "eventName": "Test Event", "date": "2026-01-01"}
         )
         yield client
+
+
+def _admin_event(extra=None):
+    security = _reload("utils.security")
+    security.reset_admin_config_cache()
+    token = security.issue_admin_token()
+    event = {"headers": {"Authorization": f"Bearer {token}"}}
+    if extra:
+        event.update(extra)
+    return event
 
 
 def _reload(module_name):
@@ -139,7 +154,10 @@ def test_get_registrations_and_cancel(dynamodb_tables):
     assert get_result["statusCode"] == 200
     assert json.loads(get_result["body"])["count"] == 1
 
-    cancel_event = {"pathParameters": {"id": reg_id}}
+    public_cancel = cancel_registration.handler({"pathParameters": {"id": reg_id}}, None)
+    assert public_cancel["statusCode"] == 401
+
+    cancel_event = _admin_event({"pathParameters": {"id": reg_id}})
     cancel_result = cancel_registration.handler(cancel_event, None)
     assert cancel_result["statusCode"] == 200
 
@@ -216,7 +234,9 @@ def test_get_registrations_lists_all_when_no_email(dynamodb_tables):
     get_registrations = _reload("get_registrations")
     register.handler({"body": json.dumps({"eventId": "evt-001", "email": "one@example.com", "name": "One"})}, None)
     register.handler({"body": json.dumps({"eventId": "evt-001", "email": "two@example.com", "name": "Two"})}, None)
-    result = get_registrations.handler({"pathParameters": None}, None)
+    denied = get_registrations.handler({"pathParameters": None}, None)
+    assert denied["statusCode"] == 401
+    result = get_registrations.handler(_admin_event({"pathParameters": None}), None)
     body = json.loads(result["body"])
     assert result["statusCode"] == 200
     assert body["count"] == 2
@@ -226,7 +246,7 @@ def test_get_registrations_all_alias_lists_everyone(dynamodb_tables):
     register = _reload("register")
     get_registrations = _reload("get_registrations")
     register.handler({"body": json.dumps({"eventId": "evt-001", "email": "one@example.com"})}, None)
-    result = get_registrations.handler({"pathParameters": {"email": "all"}}, None)
+    result = get_registrations.handler(_admin_event({"pathParameters": {"email": "all"}}), None)
     assert result["statusCode"] == 200
     assert json.loads(result["body"])["count"] == 1
 
@@ -288,4 +308,18 @@ def test_origin_verify_rejects_direct_api_access(dynamodb_tables, monkeypatch):
     allowed = list_events.handler({"headers": {"X-Origin-Verify": "cloudfront-origin-token"}}, None)
     assert denied["statusCode"] == 403
     assert allowed["statusCode"] == 200
+
+
+def test_admin_login_issues_token(dynamodb_tables):
+    admin_login = _reload("admin_login")
+    result = admin_login.handler({"body": json.dumps({"password": "test-admin-pass"})}, None)
+    body = json.loads(result["body"])
+    assert result["statusCode"] == 200
+    assert body["token"]
+
+
+def test_admin_login_rejects_wrong_password(dynamodb_tables):
+    admin_login = _reload("admin_login")
+    result = admin_login.handler({"body": json.dumps({"password": "nope"})}, None)
+    assert result["statusCode"] == 401
 

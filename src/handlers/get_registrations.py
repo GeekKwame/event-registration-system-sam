@@ -9,7 +9,7 @@ import os
 import boto3
 from boto3.dynamodb.conditions import Key
 from utils.response import build_response, error_response
-from utils.security import is_valid_email, require_cloudfront_origin
+from utils.security import is_valid_email, require_admin, require_cloudfront_origin
 from utils.providers import registrations_for
 
 dynamodb = boto3.resource("dynamodb")
@@ -50,7 +50,11 @@ def handler(event, context):
     email = (path_params.get("email") or "").strip().lower()
     list_all = not email or email == "all"
 
-    if not list_all and not is_valid_email(email):
+    if list_all:
+        denied = require_admin(event)
+        if denied:
+            return denied
+    elif not is_valid_email(email):
         return error_response(400, "A valid email address is required")
 
     table = dynamodb.Table(REGISTRATIONS_TABLE)

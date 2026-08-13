@@ -78,6 +78,22 @@ Resources:
         RequireEachIncludedType: false
 
   # ---------------------------------------------------------------------
+  # Admin password + token HMAC key. Set the password out of band:
+  # aws secretsmanager put-secret-value --secret-id <stack>/admin-auth \
+  #   --secret-string '{"password":"YOUR_PASSWORD","tokenKey":"<keep existing tokenKey>"}'
+  # ---------------------------------------------------------------------
+  AdminAuthSecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Name: !Sub "${AWS::StackName}/admin-auth"
+      Description: Admin password and session-token HMAC key. Never put this in the frontend.
+      GenerateSecretString:
+        SecretStringTemplate: '{"password":"CHANGE_ME"}'
+        GenerateStringKey: "tokenKey"
+        PasswordLength: 32
+        ExcludePunctuation: true
+
+  # ---------------------------------------------------------------------
   # Resend API key. CloudFormation only creates an unusable placeholder;
   # the real key is written out-of-band so it is never in a template,
   # a parameter, or a Lambda environment variable.
@@ -177,7 +193,7 @@ Resources:
           MetricsEnabled: true
       Cors:
         AllowMethods: "'GET,POST,DELETE,OPTIONS'"
-        AllowHeaders: "'Content-Type'"
+        AllowHeaders: "'Content-Type,Authorization'"
         AllowOrigin: "'*'"
 
   # ---------------------------------------------------------------------
@@ -247,13 +263,42 @@ Resources:
             Path: /events
             Method: get
 
+  AdminLoginFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "event-admin-login-${Stage}"
+      CodeUri: src/handlers/
+      Handler: admin_login.handler
+      Environment:
+        Variables:
+          ADMIN_SECRET_ARN: !Ref AdminAuthSecret
+      Policies:
+        - Statement:
+            - Effect: Allow
+              Action: secretsmanager:GetSecretValue
+              Resource: !Ref AdminAuthSecret
+      Events:
+        AdminLoginApi:
+          Type: Api
+          Properties:
+            RestApiId: !Ref EventApi
+            Path: /admin/login
+            Method: post
+
   GetRegistrationsFunction:
     Type: AWS::Serverless::Function
     Properties:
       FunctionName: !Sub "event-get-registrations-${Stage}"
       CodeUri: src/handlers/
       Handler: get_registrations.handler
+      Environment:
+        Variables:
+          ADMIN_SECRET_ARN: !Ref AdminAuthSecret
       Policies:
+        - Statement:
+            - Effect: Allow
+              Action: secretsmanager:GetSecretValue
+              Resource: !Ref AdminAuthSecret
         - DynamoDBReadPolicy:
             TableName: !Ref RegistrationsTable
       Events:
@@ -276,7 +321,14 @@ Resources:
       FunctionName: !Sub "event-cancel-registration-${Stage}"
       CodeUri: src/handlers/
       Handler: cancel_registration.handler
+      Environment:
+        Variables:
+          ADMIN_SECRET_ARN: !Ref AdminAuthSecret
       Policies:
+        - Statement:
+            - Effect: Allow
+              Action: secretsmanager:GetSecretValue
+              Resource: !Ref AdminAuthSecret
         - DynamoDBCrudPolicy:
             TableName: !Ref RegistrationsTable
       Events:

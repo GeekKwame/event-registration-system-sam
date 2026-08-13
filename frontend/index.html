@@ -36,6 +36,8 @@
           <span class="status-dot" aria-hidden="true"></span>
           <span id="api-status-text">Checking connectivity…</span>
         </div>
+        <button type="button" id="btn-admin" class="btn btn-secondary btn-admin">Admin</button>
+        <button type="button" id="btn-admin-signout" class="btn btn-tertiary hidden">Sign out</button>
       </div>
     </header>
 
@@ -124,7 +126,7 @@
         <div class="section-header">
           <div>
             <h2>Registrations</h2>
-            <p class="section-desc">All confirmed attendees. Filter by the email used at registration.</p>
+            <p class="section-desc" id="regs-section-desc">Look up your tickets by the email used at registration. Cancelling a seat is admin-only.</p>
           </div>
         </div>
 
@@ -154,7 +156,7 @@
         <div id="regs-empty" class="empty-state hidden">
           <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
           <h3>No registrations found</h3>
-          <p>No registrations yet. Register from the Events tab to see attendees here.</p>
+          <p id="regs-empty-message">Enter the email you registered with to see your tickets.</p>
         </div>
       </section>
     </main>
@@ -186,6 +188,30 @@
           <div class="modal-footer">
             <button type="button" id="btn-cancel-modal" class="btn btn-tertiary">Cancel</button>
             <button type="submit" id="btn-submit-register" class="btn btn-primary">Confirm Registration</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- Admin sign-in -->
+    <div id="admin-modal" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="admin-modal-title">
+      <div class="modal-card" style="max-width: 400px;">
+        <div class="modal-header">
+          <div>
+            <h3 id="admin-modal-title">Admin sign-in</h3>
+            <span class="badge">Cancels and full attendee list</span>
+          </div>
+          <button id="btn-close-admin-modal" class="btn-close" aria-label="Close dialog">&times;</button>
+        </div>
+        <form id="form-admin-login" class="modal-form">
+          <div class="form-group">
+            <label for="admin-password-input">Admin password</label>
+            <input type="password" id="admin-password-input" autocomplete="current-password" required>
+            <span class="form-hint">Public visitors can register. Only admins can cancel tickets or list everyone.</span>
+          </div>
+          <div class="modal-footer">
+            <button type="button" id="btn-cancel-admin-modal" class="btn btn-tertiary">Cancel</button>
+            <button type="submit" class="btn btn-primary">Sign in</button>
           </div>
         </form>
       </div>

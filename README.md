@@ -90,9 +90,28 @@ python -m pytest tests/ -v
 |---|---|---|
 | GET | `/api/events` | Catalog with live seat counts |
 | POST | `/api/register` | Rejects duplicates and full events |
-| GET | `/api/registrations` | All confirmed attendees |
-| GET | `/api/registrations/{email}` | Filter by attendee email |
-| DELETE | `/api/registration/{id}` | Cancel a ticket |
+| POST | `/api/admin/login` | Admin password → short-lived session token |
+| GET | `/api/registrations` | All attendees — **admin session required** |
+| GET | `/api/registrations/{email}` | That attendee's tickets (public lookup) |
+| DELETE | `/api/registration/{id}` | Cancel a ticket — **admin session required** |
+
+Public visitors can browse events, register, and look up their own email. They cannot cancel tickets or list every attendee.
+
+## Admin access
+
+The admin password lives in Secrets Manager (`event-registration-system/admin-auth`). It is not in the frontend.
+
+```bash
+# Read the current tokenKey, then set a new password without losing it
+aws secretsmanager get-secret-value --secret-id event-registration-system/admin-auth --region us-west-1 --query SecretString --output text
+
+aws secretsmanager put-secret-value \
+  --secret-id event-registration-system/admin-auth \
+  --region us-west-1 \
+  --secret-string '{"password":"YOUR_NEW_PASSWORD","tokenKey":"KEEP_EXISTING_TOKEN_KEY"}'
+```
+
+On the live site, click **Admin**, sign in, then **Show all** and **Cancel** appear. The session is stored in `sessionStorage` and expires after 8 hours.
 
 ---
 

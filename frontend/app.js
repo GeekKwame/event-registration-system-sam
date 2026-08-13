@@ -4,7 +4,16 @@
  */
 
 const STORAGE_KEY_LAST_EMAIL = 'eventpulse_last_registration_email';
+const STORAGE_KEY_ADMIN_TOKEN = 'eventpulse_admin_token';
 const API_BASE = '/api';
+
+function getAdminToken() {
+  return sessionStorage.getItem(STORAGE_KEY_ADMIN_TOKEN) || '';
+}
+
+function isAdmin() {
+  return Boolean(getAdminToken());
+}
 
 function unwrapApiPayload(payload) {
   if (payload && typeof payload.body === 'string') {
@@ -14,13 +23,17 @@ function unwrapApiPayload(payload) {
 }
 
 async function apiFetch(path, options = {}) {
+  const headers = {
+    Accept: 'application/json',
+    ...(options.body ? { 'Content-Type': 'application/json' } : {}),
+    ...(options.headers || {}),
+  };
+  const token = getAdminToken();
+  if (token) headers.Authorization = `Bearer ${token}`;
+
   const response = await fetch(`${API_BASE}${path}`, {
     ...options,
-    headers: {
-      Accept: 'application/json',
-      ...(options.body ? { 'Content-Type': 'application/json' } : {}),
-      ...(options.headers || {}),
-    },
+    headers,
   });
   let payload = {};
   try {
@@ -86,6 +99,15 @@ class EventPulseApp {
     this.btnConfirmYes = document.getElementById('confirm-dialog-confirm');
     this.btnConfirmNo = document.getElementById('confirm-dialog-cancel');
     this.tabRegCount = document.getElementById('tab-reg-count');
+    this.btnAdmin = document.getElementById('btn-admin');
+    this.btnAdminSignout = document.getElementById('btn-admin-signout');
+    this.adminModal = document.getElementById('admin-modal');
+    this.formAdminLogin = document.getElementById('form-admin-login');
+    this.adminPasswordInput = document.getElementById('admin-password-input');
+    this.btnCloseAdminModal = document.getElementById('btn-close-admin-modal');
+    this.btnCancelAdminModal = document.getElementById('btn-cancel-admin-modal');
+    this.regsSectionDesc = document.getElementById('regs-section-desc');
+    this.regsEmptyMessage = document.getElementById('regs-empty-message');
   }
 
   bindEvents() {
@@ -110,6 +132,7 @@ class EventPulseApp {
       if (e.key === 'Escape') {
         if (!this.registerModal.classList.contains('hidden')) this.closeModal();
         if (!this.confirmDialog.classList.contains('hidden')) this.closeConfirmDialog(false);
+        if (!this.adminModal.classList.contains('hidden')) this.closeAdminModal();
       }
     });
 
@@ -119,6 +142,10 @@ class EventPulseApp {
     });
 
     this.btnClearSearch.addEventListener('click', () => {
+      if (!isAdmin()) {
+        this.showToast('Sign in as admin to list every attendee', 'error');
+        return;
+      }
       this.searchEmailInput.value = '';
       this.fetchRegistrations('');
     });
@@ -128,12 +155,85 @@ class EventPulseApp {
     this.confirmDialog.addEventListener('click', (e) => {
       if (e.target === this.confirmDialog) this.closeConfirmDialog(false);
     });
+
+    this.btnAdmin.addEventListener('click', () => this.openAdminModal());
+    this.btnAdminSignout.addEventListener('click', () => this.signOutAdmin());
+    this.formAdminLogin.addEventListener('submit', (e) => {
+      e.preventDefault();
+      this.submitAdminLogin();
+    });
+    this.btnCloseAdminModal.addEventListener('click', () => this.closeAdminModal());
+    this.btnCancelAdminModal.addEventListener('click', () => this.closeAdminModal());
+    this.adminModal.addEventListener('click', (e) => {
+      if (e.target === this.adminModal) this.closeAdminModal();
+    });
   }
 
   initApp() {
     const lastEmail = localStorage.getItem(STORAGE_KEY_LAST_EMAIL) || '';
     if (lastEmail) this.searchEmailInput.value = lastEmail;
+    this.syncAdminUi();
     this.fetchEvents();
+  }
+
+  syncAdminUi() {
+    const admin = isAdmin();
+    this.btnAdmin.textContent = admin ? 'Admin signed in' : 'Admin';
+    this.btnAdmin.classList.toggle('is-admin', admin);
+    this.btnAdminSignout.classList.toggle('hidden', !admin);
+    if (this.btnClearSearch) this.btnClearSearch.classList.toggle('hidden', !admin);
+    if (this.regsSectionDesc) {
+      this.regsSectionDesc.textContent = admin
+        ? 'Admin view: all attendees. Cancel is available. Sign out when you are done.'
+        : 'Look up your tickets by the email used at registration. Cancelling a seat is admin-only.';
+    }
+    if (this.regsEmptyMessage) {
+      this.regsEmptyMessage.textContent = admin
+        ? 'No registrations yet.'
+        : 'Enter the email you registered with to see your tickets.';
+    }
+  }
+
+  openAdminModal() {
+    if (isAdmin()) {
+      this.showToast('Admin session is already active', 'success');
+      return;
+    }
+    this.adminPasswordInput.value = '';
+    this.adminModal.classList.remove('hidden');
+    document.body.classList.add('modal-open');
+    setTimeout(() => this.adminPasswordInput.focus(), 50);
+  }
+
+  closeAdminModal() {
+    this.adminModal.classList.add('hidden');
+    document.body.classList.remove('modal-open');
+  }
+
+  async submitAdminLogin() {
+    const password = this.adminPasswordInput.value;
+    if (!password) return;
+    try {
+      const result = await apiFetch('/admin/login', {
+        method: 'POST',
+        body: JSON.stringify({ password }),
+      });
+      if (!result.token) throw new Error('No session token returned');
+      sessionStorage.setItem(STORAGE_KEY_ADMIN_TOKEN, result.token);
+      this.closeAdminModal();
+      this.syncAdminUi();
+      this.showToast('Admin signed in', 'success');
+      this.fetchRegistrations((this.searchEmailInput.value || '').trim());
+    } catch (err) {
+      this.showToast(err.message || 'Admin sign-in failed', 'error');
+    }
+  }
+
+  signOutAdmin() {
+    sessionStorage.removeItem(STORAGE_KEY_ADMIN_TOKEN);
+    this.syncAdminUi();
+    this.showToast('Admin signed out', 'success');
+    this.fetchRegistrations((this.searchEmailInput.value || '').trim());
   }
 
   switchTab(targetSectionId, activeBtn) {
@@ -357,6 +457,11 @@ class EventPulseApp {
     this.regsEmpty.classList.add('hidden');
 
     try {
+      if (!email.includes('@') && !isAdmin()) {
+        this.allRegistrations = [];
+        this.renderRegistrations([]);
+        return;
+      }
       const path = email.includes('@')
         ? `/registrations/${encodeURIComponent(email)}`
         : '/registrations';
@@ -416,9 +521,12 @@ class EventPulseApp {
             </div>
           </div>
         </div>
-        <button class="btn btn-danger btn-cancel-reg">Cancel</button>
+        ${isAdmin() ? '<button class="btn btn-danger btn-cancel-reg">Cancel</button>' : ''}
       `;
-      item.querySelector('.btn-cancel-reg').addEventListener('click', () => this.cancelRegistration(regId));
+      const cancelBtn = item.querySelector('.btn-cancel-reg');
+      if (cancelBtn) {
+        cancelBtn.addEventListener('click', () => this.cancelRegistration(regId));
+      }
       this.regsList.appendChild(item);
     });
   }
@@ -428,6 +536,11 @@ class EventPulseApp {
   }
 
   async cancelRegistration(registrationId) {
+    if (!isAdmin()) {
+      this.showToast('Only an admin can cancel registrations', 'error');
+      this.openAdminModal();
+      return;
+    }
     const confirmed = await this.showConfirmDialog(
       `Cancel registration ${registrationId}? This action cannot be undone.`
     );
