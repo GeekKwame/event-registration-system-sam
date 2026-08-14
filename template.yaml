@@ -23,10 +23,10 @@ Parameters:
     Description: SES-verified sender used for registrant confirmation emails.
   ResendFromEmail:
     Type: String
-    Default: "onboarding@resend.dev"
+    Default: "noreply@studentstudyplannerxyz.xyz"
     Description: >-
       From address for Resend fallback emails. Must be on a domain verified in
-      Resend. Keep the default until your own domain is verified there.
+      Resend. studentstudyplannerxyz.xyz is verified; do not revert to onboarding@resend.dev.
 
   # The Resend API key is NOT a stack parameter. It lives in Secrets Manager so it
   # never appears in CloudFormation parameters or Lambda environment variables.

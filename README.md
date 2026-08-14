@@ -136,7 +136,7 @@ The ticket is the registration record (DynamoDB) plus the on-screen receipt. Ema
 - **On-screen receipt** — shown immediately after a successful `POST /api/register` (event, name, email, ticket ID). Saved in this browser under **My tickets**.
 - **SNS** — notifies the *admin* topic subscriber. Attendees are not SNS subscribers, so they never get that message.
 - **SES** — tries to email the attendee, but SES is still in **sandbox**. It only delivers to identities verified in `us-west-1`. Everyone else is dropped by SES.
-- **Resend** — fallback after SES fails. Sends from `ResendFromEmail` (default `onboarding@resend.dev`). To send from your own domain, verify it in Resend first, then deploy with `ResendFromEmail=noreply@yourdomain`.
+- **Resend** — fallback after SES fails. Sends from `noreply@studentstudyplannerxyz.xyz` (domain verified in Resend). Do not set `ResendFromEmail` back to `onboarding@resend.dev`; that address can only mail the Resend account owner.
 
 To make SES the primary attendee channel, request production access for SES in `us-west-1`. Until then, demo and use the on-screen ticket.
 
