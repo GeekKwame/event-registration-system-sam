@@ -5,7 +5,31 @@
 
 const STORAGE_KEY_LAST_EMAIL = 'eventpulse_last_registration_email';
 const STORAGE_KEY_ADMIN_TOKEN = 'eventpulse_admin_token';
+const STORAGE_KEY_MY_TICKETS = 'eventpulse_my_tickets';
 const API_BASE = '/api';
+
+function getLocalTickets() {
+  try { return JSON.parse(localStorage.getItem(STORAGE_KEY_MY_TICKETS) || '[]'); }
+  catch { return []; }
+}
+
+function saveLocalTicket(ticket) {
+  const tickets = getLocalTickets();
+  const id = String(ticket.registrationId || '');
+  if (!id || tickets.some(t => String(t.registrationId) === id)) return;
+  tickets.unshift(ticket);
+  localStorage.setItem(STORAGE_KEY_MY_TICKETS, JSON.stringify(tickets.slice(0, 50)));
+}
+
+function mergeTickets(primary, extra) {
+  const map = new Map();
+  [...(extra || []), ...(primary || [])].forEach((item) => {
+    const id = String(item.registrationId || item.id || '').trim();
+    const key = id || `${item.email || ''}|${item.eventId || ''}`;
+    if (!map.has(key)) map.set(key, item);
+  });
+  return Array.from(map.values());
+}
 
 function getAdminToken() {
   return sessionStorage.getItem(STORAGE_KEY_ADMIN_TOKEN) || '';
@@ -108,6 +132,14 @@ class EventPulseApp {
     this.btnCancelAdminModal = document.getElementById('btn-cancel-admin-modal');
     this.regsSectionDesc = document.getElementById('regs-section-desc');
     this.regsEmptyMessage = document.getElementById('regs-empty-message');
+    this.ticketModal = document.getElementById('ticket-modal');
+    this.ticketEventName = document.getElementById('ticket-event-name');
+    this.ticketName = document.getElementById('ticket-name');
+    this.ticketEmail = document.getElementById('ticket-email');
+    this.ticketId = document.getElementById('ticket-id');
+    this.btnCloseTicketModal = document.getElementById('btn-close-ticket-modal');
+    this.btnCopyTicket = document.getElementById('btn-copy-ticket');
+    this.btnViewTickets = document.getElementById('btn-view-tickets');
   }
 
   bindEvents() {
@@ -133,6 +165,7 @@ class EventPulseApp {
         if (!this.registerModal.classList.contains('hidden')) this.closeModal();
         if (!this.confirmDialog.classList.contains('hidden')) this.closeConfirmDialog(false);
         if (!this.adminModal.classList.contains('hidden')) this.closeAdminModal();
+        if (this.ticketModal && !this.ticketModal.classList.contains('hidden')) this.closeTicketModal();
       }
     });
 
@@ -142,10 +175,6 @@ class EventPulseApp {
     });
 
     this.btnClearSearch.addEventListener('click', () => {
-      if (!isAdmin()) {
-        this.showToast('Sign in as admin to list every attendee', 'error');
-        return;
-      }
       this.searchEmailInput.value = '';
       this.fetchRegistrations('');
     });
@@ -167,12 +196,24 @@ class EventPulseApp {
     this.adminModal.addEventListener('click', (e) => {
       if (e.target === this.adminModal) this.closeAdminModal();
     });
+
+    this.btnCloseTicketModal.addEventListener('click', () => this.closeTicketModal());
+    this.ticketModal.addEventListener('click', (e) => {
+      if (e.target === this.ticketModal) this.closeTicketModal();
+    });
+    this.btnCopyTicket.addEventListener('click', () => this.copyTicketId());
+    this.btnViewTickets.addEventListener('click', () => {
+      this.closeTicketModal();
+      const regsTab = document.getElementById('tab-my-registrations');
+      this.switchTab('section-my-registrations', regsTab);
+    });
   }
 
   initApp() {
     const lastEmail = localStorage.getItem(STORAGE_KEY_LAST_EMAIL) || '';
     if (lastEmail) this.searchEmailInput.value = lastEmail;
     this.syncAdminUi();
+    this.updateRegCount(getLocalTickets().length);
     this.fetchEvents();
   }
 
@@ -181,16 +222,19 @@ class EventPulseApp {
     this.btnAdmin.textContent = admin ? 'Admin signed in' : 'Admin';
     this.btnAdmin.classList.toggle('is-admin', admin);
     this.btnAdminSignout.classList.toggle('hidden', !admin);
-    if (this.btnClearSearch) this.btnClearSearch.classList.toggle('hidden', !admin);
+    if (this.btnClearSearch) {
+      this.btnClearSearch.classList.remove('hidden');
+      this.btnClearSearch.textContent = admin ? 'Show all' : 'This browser';
+    }
     if (this.regsSectionDesc) {
       this.regsSectionDesc.textContent = admin
         ? 'Admin view: all attendees. Cancel is available. Sign out when you are done.'
-        : 'Look up your tickets by the email used at registration. Cancelling a seat is admin-only.';
+        : 'Tickets from this browser appear here after you register. Look up by email if you used another device. Only an admin can cancel a seat.';
     }
     if (this.regsEmptyMessage) {
       this.regsEmptyMessage.textContent = admin
         ? 'No registrations yet.'
-        : 'Enter the email you registered with to see your tickets.';
+        : 'Register for an event to get a ticket on this screen. You can also look up by email.';
     }
   }
 
@@ -419,6 +463,30 @@ class EventPulseApp {
     }
   }
 
+  openTicketReceipt(ticket) {
+    this.ticketEventName.textContent = ticket.eventName || ticket.eventId || 'Event';
+    this.ticketName.textContent = ticket.name || '—';
+    this.ticketEmail.textContent = ticket.email || '—';
+    this.ticketId.textContent = ticket.registrationId || '—';
+    this.ticketModal.classList.remove('hidden');
+    document.body.classList.add('modal-open');
+  }
+
+  closeTicketModal() {
+    this.ticketModal.classList.add('hidden');
+    document.body.classList.remove('modal-open');
+  }
+
+  async copyTicketId() {
+    const id = this.ticketId.textContent || '';
+    try {
+      await navigator.clipboard.writeText(id);
+      this.showToast('Ticket ID copied', 'success');
+    } catch {
+      this.showToast(id, 'success');
+    }
+  }
+
   async submitRegistration() {
     const eventId = this.modalEventId.value;
     const name = this.regNameInput.value.trim();
@@ -438,12 +506,21 @@ class EventPulseApp {
         }),
       });
       const registration = result.registration || result;
-      const regId = registration.registrationId || registration.id || 'OK';
+      const ticket = {
+        registrationId: registration.registrationId || registration.id || '',
+        eventId: registration.eventId || eventId,
+        eventName: registration.eventName || this.modalEventTitle.textContent || eventId,
+        name: registration.name || name,
+        email: registration.email || email,
+        createdAt: registration.createdAt || new Date().toISOString(),
+        status: registration.status || 'confirmed',
+      };
+      saveLocalTicket(ticket);
       localStorage.setItem(STORAGE_KEY_LAST_EMAIL, email);
       this.searchEmailInput.value = email;
-      this.showToast(`Registration confirmed. Ticket ${regId}`, 'success');
       this.fetchEvents();
       this.fetchRegistrations(email);
+      this.openTicketReceipt(ticket);
     } catch (err) {
       this.showToast(err.message || 'Registration failed', 'error');
     }
@@ -457,21 +534,33 @@ class EventPulseApp {
     this.regsEmpty.classList.add('hidden');
 
     try {
+      const localTickets = getLocalTickets();
       if (!email.includes('@') && !isAdmin()) {
-        this.allRegistrations = [];
-        this.renderRegistrations([]);
+        this.allRegistrations = localTickets;
+        this.renderRegistrations(localTickets);
         return;
       }
       const path = email.includes('@')
         ? `/registrations/${encodeURIComponent(email)}`
         : '/registrations';
       const data = await apiFetch(path);
-      this.allRegistrations = Array.isArray(data) ? data : (data.registrations || []);
+      const remote = Array.isArray(data) ? data : (data.registrations || []);
+      const extra = email.includes('@')
+        ? localTickets.filter(t => String(t.email || '').toLowerCase() === email)
+        : localTickets;
+      this.allRegistrations = isAdmin() && !email.includes('@')
+        ? remote
+        : mergeTickets(remote, extra);
       this.renderRegistrations(this.allRegistrations, email);
     } catch (err) {
-      this.showToast(err.message || 'Could not look up registrations', 'error');
-      this.allRegistrations = [];
-      this.renderRegistrations([]);
+      const fallback = email.includes('@')
+        ? getLocalTickets().filter(t => String(t.email || '').toLowerCase() === email)
+        : getLocalTickets();
+      this.allRegistrations = fallback;
+      this.renderRegistrations(fallback, email);
+      if (!fallback.length) {
+        this.showToast(err.message || 'Could not look up registrations', 'error');
+      }
     } finally {
       this.regsLoading.classList.add('hidden');
     }

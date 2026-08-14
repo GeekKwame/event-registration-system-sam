@@ -30,7 +30,8 @@ Browser
 - Frontend calls same-origin paths only: `/api/events`, `/api/register`, `/api/registrations/{email}`, `/api/registration/{id}`
 - CloudFront strips `/api`, injects the origin secret, and forwards to API Gateway
 - WAF and Lambda reject any request missing that secret
-- `GET /api/registrations` lists attendees for the dashboard; `GET /api/registrations/{email}` filters by attendee
+- After register, the UI shows a ticket receipt immediately. **My tickets** keeps those tickets in this browser and can also look up DynamoDB by email
+- `GET /api/registrations` lists every attendee (admin session). `GET /api/registrations/{email}` is the public lookup
 
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
@@ -95,7 +96,7 @@ python -m pytest tests/ -v
 | GET | `/api/registrations/{email}` | That attendee's tickets (public lookup) |
 | DELETE | `/api/registration/{id}` | Cancel a ticket — **admin session required** |
 
-Public visitors can browse events, register, and look up their own email. They cannot cancel tickets or list every attendee.
+Public visitors can browse events, register, see an on-screen ticket, and look up their own email. They cannot cancel tickets or list every attendee. The **My tickets** tab shows tickets saved in this browser; **Find my tickets** queries DynamoDB when they used another device.
 
 ## Admin access
 
@@ -111,7 +112,7 @@ aws secretsmanager put-secret-value \
   --secret-string '{"password":"YOUR_NEW_PASSWORD","tokenKey":"KEEP_EXISTING_TOKEN_KEY"}'
 ```
 
-On the live site, click **Admin**, sign in, then **Show all** and **Cancel** appear. The session is stored in `sessionStorage` and expires after 8 hours.
+On the live site, click **Admin**, sign in, then **Show all** and **Cancel** appear. Without admin, **This browser** lists tickets saved on the device. The session is stored in `sessionStorage` and expires after 8 hours.
 
 ---
 
@@ -128,13 +129,16 @@ aws secretsmanager put-secret-value \
 
 To rotate: create a new key in Resend, delete the old one there, then run the command above with the new value. No redeploy is needed — the function reads it on the next invocation.
 
-## Email delivery
+## Tickets vs email
 
-SES is the primary sender, with Resend as the fallback. **SES is still in sandbox mode**, so it can only deliver to identities verified in `us-west-1`. Every other recipient is served by Resend, which is why the fallback must stay working.
+The ticket is the registration record (DynamoDB) plus the on-screen receipt. Email is a backup, not the way attendees prove they registered.
 
-Resend sends from `ResendFromEmail` (default `onboarding@resend.dev`). To send from your own domain, verify it in Resend first, then deploy with `ResendFromEmail=noreply@yourdomain`.
+- **On-screen receipt** — shown immediately after a successful `POST /api/register` (event, name, email, ticket ID). Saved in this browser under **My tickets**.
+- **SNS** — notifies the *admin* topic subscriber. Attendees are not SNS subscribers, so they never get that message.
+- **SES** — tries to email the attendee, but SES is still in **sandbox**. It only delivers to identities verified in `us-west-1`. Everyone else is dropped by SES.
+- **Resend** — fallback after SES fails. Sends from `ResendFromEmail` (default `onboarding@resend.dev`). To send from your own domain, verify it in Resend first, then deploy with `ResendFromEmail=noreply@yourdomain`.
 
-To lift the SES restriction, request production access for SES in `us-west-1`.
+To make SES the primary attendee channel, request production access for SES in `us-west-1`. Until then, demo and use the on-screen ticket.
 
 ## Other notes
 

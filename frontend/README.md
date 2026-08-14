@@ -2,6 +2,8 @@
 
 Static UI for the CloudFront distribution. It talks to **same-origin `/api` paths only**. API Gateway URLs must never appear in this folder.
 
+After a successful register, the UI shows a ticket receipt and stores it in this browser (`localStorage`). **My tickets** lists those receipts. **Find my tickets** looks up `/api/registrations/{email}`. Email from SES/SNS is optional; the on-screen ticket is the attendee record.
+
 ## Local preview (UI only)
 
 ```bash

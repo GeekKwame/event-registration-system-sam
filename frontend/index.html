@@ -8,7 +8,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="style.css?v=ticket-receipt-1">
 </head>
 <body>
   <div class="app-container">
@@ -50,7 +50,7 @@
       </button>
       <button class="tab-btn" id="tab-my-registrations" data-tab="section-my-registrations" role="tab" aria-selected="false" aria-controls="section-my-registrations">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
-        Registrations
+        My tickets
         <span class="tab-count" id="tab-reg-count" aria-label="Registration count"></span>
       </button>
     </nav>
@@ -64,11 +64,11 @@
           <div class="hero-copy">
             <p class="eyebrow"><span class="live-pulse" aria-hidden="true"></span> Event Hub</p>
             <h2 id="hero-title">Find an event and lock in your seat.</h2>
-            <p>Live capacity, duplicate protection, and email confirmation — served through Amazon CloudFront.</p>
+            <p>Live capacity, duplicate protection, and an on-screen ticket after you register — served through Amazon CloudFront.</p>
             <div class="hero-proof">
               <span>✓ CloudFront HTTPS</span>
               <span>✓ Private API origin</span>
-              <span>✓ SNS confirmations</span>
+              <span>✓ Instant ticket receipt</span>
             </div>
           </div>
           <div class="capacity-orbit" aria-label="Live capacity snapshot">
@@ -125,22 +125,22 @@
       <section id="section-my-registrations" class="tab-content hidden" role="tabpanel" aria-labelledby="tab-my-registrations">
         <div class="section-header">
           <div>
-            <h2>Registrations</h2>
-            <p class="section-desc" id="regs-section-desc">Look up your tickets by the email used at registration. Cancelling a seat is admin-only.</p>
+            <h2>My tickets</h2>
+            <p class="section-desc" id="regs-section-desc">Tickets from this browser appear here after you register. You can also look up by email. Only an admin can cancel a seat.</p>
           </div>
         </div>
 
         <div class="search-card">
           <form id="form-search-email" class="search-form">
             <div class="form-group flex-1">
-              <label for="search-email-input">Filter by email</label>
+              <label for="search-email-input">Look up by email</label>
               <input type="email" id="search-email-input" placeholder="you@example.com" autocomplete="email" spellcheck="false">
             </div>
             <button type="submit" class="btn btn-primary" id="btn-search-email">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
-              Filter
+              Find my tickets
             </button>
-            <button type="button" class="btn btn-secondary" id="btn-clear-search">Show all</button>
+            <button type="button" class="btn btn-secondary" id="btn-clear-search">This browser</button>
           </form>
         </div>
 
@@ -156,7 +156,7 @@
         <div id="regs-empty" class="empty-state hidden">
           <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
           <h3>No registrations found</h3>
-          <p id="regs-empty-message">Enter the email you registered with to see your tickets.</p>
+          <p id="regs-empty-message">Register for an event to get a ticket on this screen. Email confirmation is extra — your ticket ID is shown immediately.</p>
         </div>
       </section>
     </main>
@@ -182,7 +182,7 @@
           <div class="form-group">
             <label for="reg-email-input">Email Address <span aria-hidden="true">*</span></label>
             <input type="email" id="reg-email-input" placeholder="jane@example.com" required aria-required="true">
-            <span class="form-hint">You'll receive a confirmation once registered.</span>
+            <span class="form-hint">Your ticket ID is shown on the next screen. Keep it — email is a backup, not the ticket.</span>
           </div>
 
           <div class="modal-footer">
@@ -190,6 +190,32 @@
             <button type="submit" id="btn-submit-register" class="btn btn-primary">Confirm Registration</button>
           </div>
         </form>
+      </div>
+    </div>
+
+    <!-- Ticket receipt — shown immediately after register so email is not required -->
+    <div id="ticket-modal" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="ticket-modal-title">
+      <div class="modal-card" style="max-width: 440px;">
+        <div class="modal-header">
+          <div>
+            <h3 id="ticket-modal-title">You're registered</h3>
+            <span class="badge badge-success">Ticket confirmed</span>
+          </div>
+          <button id="btn-close-ticket-modal" class="btn-close" aria-label="Close dialog">&times;</button>
+        </div>
+        <div class="modal-form">
+          <p class="form-hint" style="margin-bottom: 12px;">Save this ticket. Confirmation email may not arrive if you are not a verified SES recipient.</p>
+          <div class="ticket-receipt">
+            <div class="ticket-row"><span>Event</span><strong id="ticket-event-name">—</strong></div>
+            <div class="ticket-row"><span>Name</span><strong id="ticket-name">—</strong></div>
+            <div class="ticket-row"><span>Email</span><strong id="ticket-email">—</strong></div>
+            <div class="ticket-row"><span>Ticket ID</span><code id="ticket-id">—</code></div>
+          </div>
+          <div class="modal-footer">
+            <button type="button" id="btn-copy-ticket" class="btn btn-secondary">Copy ticket ID</button>
+            <button type="button" id="btn-view-tickets" class="btn btn-primary">View my tickets</button>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -235,6 +261,6 @@
     <div id="toast-container" class="toast-container" aria-live="polite"></div>
   </div>
 
-  <script src="app.js"></script>
+  <script src="app.js?v=ticket-receipt-1"></script>
 </body>
 </html>

@@ -45,8 +45,10 @@ Production traffic terminates at **Amazon CloudFront**. API Gateway is an origin
               └──────────────────► DynamoDB (SSE + PITR) ◄────────────────────────┘
                                         │
                                         ▼
-                              SNS / SES confirmations
-                              CloudWatch error alarms
+                         Browser ticket receipt (source of truth for the attendee)
+                         SNS → admin topic only
+                         SES (sandbox) / Resend → optional attendee email
+                         CloudWatch error alarms
 ```
 
 ---
@@ -84,6 +86,21 @@ Added for production:
 ## API routes (CloudFront paths)
 
 1. `GET /api/events` → `list_events.py`
-2. `POST /api/register` → `register.py` (capacity + duplicate checks)
-3. `GET /api/registrations` and `GET /api/registrations/{email}` → `get_registrations.py`
-4. `DELETE /api/registration/{id}` → `cancel_registration.py`
+2. `POST /api/register` → `register.py` (capacity + duplicate checks; returns the ticket in the JSON body)
+3. `POST /api/admin/login` → `admin_login.py`
+4. `GET /api/registrations` → `get_registrations.py` (all attendees; **admin session**)
+5. `GET /api/registrations/{email}` → `get_registrations.py` (public lookup for that attendee)
+6. `DELETE /api/registration/{id}` → `cancel_registration.py` (**admin session**)
+
+The public **My tickets** tab does not list everyone. It shows tickets saved in the browser after register, and can call `GET /api/registrations/{email}` to recover tickets from another device.
+
+## Notifications
+
+| Channel | Who receives it | Notes |
+|---|---|---|
+| UI ticket receipt | The person who just registered | Always shown on success. Copied into `localStorage` for **My tickets**. |
+| SNS topic | Admin subscriber only | Not an attendee inbox. |
+| SES | Attendee email | Sandbox: verified identities in `us-west-1` only. |
+| Resend | Attendee email | Fallback after SES fails. |
+
+Do not treat SNS/SES as the attendee ticket. DynamoDB plus the on-screen receipt are.

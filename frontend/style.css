@@ -153,6 +153,40 @@ button {
   gap: var(--space-2);
 }
 
+.ticket-receipt {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--surface-subtle);
+  overflow: hidden;
+  margin-bottom: var(--space-4);
+}
+
+.ticket-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--space-3);
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--line);
+  font-size: var(--text-sm);
+}
+
+.ticket-row:last-child {
+  border-bottom: 0;
+}
+
+.ticket-row span {
+  color: var(--ink-faint);
+  font-weight: 600;
+}
+
+.ticket-row strong,
+.ticket-row code {
+  color: var(--ink);
+  text-align: right;
+  word-break: break-all;
+}
+
 .btn-admin.is-admin {
   border-color: var(--brand);
   background: var(--brand-soft);
